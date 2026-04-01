@@ -1,0 +1,7 @@
+# Optional profile: same as default; use when you want explicit local dev.
+# Run: mvn spring-boot:run -Dspring-boot.run.profiles=dev
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/wms
+    username: wms
+    password: wms
