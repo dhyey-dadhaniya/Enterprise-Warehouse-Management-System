@@ -14,3 +14,8 @@ spring:
 
   flyway:
     enabled: true
+
+app:
+  jwt:
+    secret: wms-test-jwt-secret-must-be-32bytes-min!
+    expiration-ms: 3600000
