@@ -3,6 +3,7 @@ package com.infotact.wms.auth;
 import com.infotact.wms.auth.dto.AuthResponse;
 import com.infotact.wms.auth.dto.LoginRequest;
 import com.infotact.wms.security.JwtProperties;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import com.infotact.wms.security.JwtService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth")
+@SecurityRequirements
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
