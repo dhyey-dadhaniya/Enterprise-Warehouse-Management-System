@@ -1,13 +1,18 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.PageResponse;
+import com.infotact.wms.common.web.Pageables;
 import com.infotact.wms.error.ConflictException;
 import com.infotact.wms.error.ResourceNotFoundException;
 import com.infotact.wms.master.dto.BinRequest;
 import com.infotact.wms.master.dto.BinResponse;
+import com.infotact.wms.master.spec.MasterSpecifications;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -22,11 +27,13 @@ public class BinService {
     }
 
     @Transactional(readOnly = true)
-    public List<BinResponse> listByZone(Long zoneId) {
+    public PageResponse<BinResponse> listByZone(Long zoneId, String q, Boolean active, Pageable pageable) {
         ensureZone(zoneId);
-        return binRepository.findByZone_IdOrderByCodeAsc(zoneId).stream()
-                .map(MasterDataMapper::toResponse)
-                .toList();
+        Pageable p = Pageables.withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "code"));
+        Specification<Bin> spec = Specification.where(MasterSpecifications.binInZone(zoneId))
+                .and(MasterSpecifications.binSearch(q))
+                .and(MasterSpecifications.binActive(active));
+        return PageResponse.of(binRepository.findAll(spec, p).map(MasterDataMapper::toResponse));
     }
 
     @Transactional(readOnly = true)

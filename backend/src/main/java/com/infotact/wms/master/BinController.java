@@ -1,9 +1,12 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.master.dto.BinRequest;
 import com.infotact.wms.master.dto.BinResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,8 +19,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/bins")
@@ -32,8 +33,13 @@ public class BinController {
     }
 
     @GetMapping
-    public List<BinResponse> list(@RequestParam("zoneId") Long zoneId) {
-        return binService.listByZone(zoneId);
+    public PageResponse<BinResponse> list(
+            @RequestParam("zoneId") Long zoneId,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean active,
+            @PageableDefault(size = 20, sort = "code") Pageable pageable
+    ) {
+        return binService.listByZone(zoneId, q, active, pageable);
     }
 
     @GetMapping("/{id}")

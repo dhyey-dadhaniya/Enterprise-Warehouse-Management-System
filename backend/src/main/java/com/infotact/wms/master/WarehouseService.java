@@ -1,14 +1,18 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.PageResponse;
+import com.infotact.wms.common.web.Pageables;
 import com.infotact.wms.error.ConflictException;
 import com.infotact.wms.error.ResourceNotFoundException;
 import com.infotact.wms.master.dto.WarehouseRequest;
 import com.infotact.wms.master.dto.WarehouseResponse;
+import com.infotact.wms.master.spec.MasterSpecifications;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -21,10 +25,10 @@ public class WarehouseService {
     }
 
     @Transactional(readOnly = true)
-    public List<WarehouseResponse> list() {
-        return warehouseRepository.findAll(Sort.by(Sort.Direction.ASC, "code")).stream()
-                .map(MasterDataMapper::toResponse)
-                .toList();
+    public PageResponse<WarehouseResponse> list(String q, Pageable pageable) {
+        Pageable p = Pageables.withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "code"));
+        Specification<Warehouse> spec = Specification.where(MasterSpecifications.warehouseSearch(q));
+        return PageResponse.of(warehouseRepository.findAll(spec, p).map(MasterDataMapper::toResponse));
     }
 
     @Transactional(readOnly = true)
