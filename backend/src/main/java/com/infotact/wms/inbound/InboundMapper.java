@@ -19,6 +19,7 @@ final class InboundMapper {
                 line.getItem().getName(),
                 line.getExpectedQty(),
                 line.getReceivedQty(),
+                line.getPostedQty(),
                 line.getNotes()
         );
     }

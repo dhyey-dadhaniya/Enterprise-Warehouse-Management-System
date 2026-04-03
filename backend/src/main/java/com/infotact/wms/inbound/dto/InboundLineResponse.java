@@ -10,6 +10,7 @@ public record InboundLineResponse(
         String itemName,
         BigDecimal expectedQty,
         BigDecimal receivedQty,
+        BigDecimal postedQty,
         String notes
 ) {
 }

@@ -48,6 +48,9 @@ public class InboundDocumentLine {
     @Column(name = "received_qty", nullable = false, precision = 19, scale = 4)
     private BigDecimal receivedQty = BigDecimal.ZERO;
 
+    @Column(name = "posted_qty", nullable = false, precision = 19, scale = 4)
+    private BigDecimal postedQty = BigDecimal.ZERO;
+
     @Column(length = 1024)
     private String notes;
 }
