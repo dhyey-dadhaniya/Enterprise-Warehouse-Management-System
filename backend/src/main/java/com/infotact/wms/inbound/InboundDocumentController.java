@@ -7,6 +7,8 @@ import com.infotact.wms.inbound.dto.InboundDocumentUpdateRequest;
 import com.infotact.wms.inbound.dto.InboundLineCreateRequest;
 import com.infotact.wms.inbound.dto.InboundLineUpdateRequest;
 import com.infotact.wms.inbound.dto.InboundStatusUpdateRequest;
+import com.infotact.wms.inbound.dto.ReceivingPostRequest;
+import com.infotact.wms.inbound.dto.ReceivingPostResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,9 +36,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class InboundDocumentController {
 
     private final InboundDocumentService inboundDocumentService;
+    private final ReceivingPostService receivingPostService;
 
-    public InboundDocumentController(InboundDocumentService inboundDocumentService) {
+    public InboundDocumentController(
+            InboundDocumentService inboundDocumentService,
+            ReceivingPostService receivingPostService
+    ) {
         this.inboundDocumentService = inboundDocumentService;
+        this.receivingPostService = receivingPostService;
     }
 
     @GetMapping
@@ -98,5 +106,17 @@ public class InboundDocumentController {
     public ResponseEntity<Void> deleteLine(@PathVariable Long id, @PathVariable Long lineId) {
         inboundDocumentService.deleteLine(id, lineId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{documentId}/lines/{lineId}/post-receipt")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    public ResponseEntity<ReceivingPostResponse> postReceipt(
+            @PathVariable Long documentId,
+            @PathVariable Long lineId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody ReceivingPostRequest request
+    ) {
+        ReceivingPostResponse body = receivingPostService.post(documentId, lineId, request, idempotencyKey);
+        return ResponseEntity.ok(body);
     }
 }
