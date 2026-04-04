@@ -162,6 +162,7 @@ public class InboundDocumentService {
         line.setItem(item);
         line.setExpectedQty(request.expectedQty());
         line.setReceivedQty(BigDecimal.ZERO);
+        line.setPostedQty(BigDecimal.ZERO);
         line.setNotes(trimToNull(request.notes()));
         doc.getLines().add(line);
         inboundDocumentRepository.save(doc);
@@ -252,6 +253,7 @@ public class InboundDocumentService {
             line.setItem(item);
             line.setExpectedQty(r.expectedQty());
             line.setReceivedQty(BigDecimal.ZERO);
+            line.setPostedQty(BigDecimal.ZERO);
             line.setNotes(trimToNull(r.notes()));
             doc.getLines().add(line);
         }
