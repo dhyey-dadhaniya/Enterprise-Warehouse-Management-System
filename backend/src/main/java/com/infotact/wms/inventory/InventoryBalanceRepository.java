@@ -1,13 +1,14 @@
 package com.infotact.wms.inventory;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface InventoryBalanceRepository extends JpaRepository<InventoryBalance, Long> {
+public interface InventoryBalanceRepository extends JpaRepository<InventoryBalance, Long>, JpaSpecificationExecutor<InventoryBalance> {
 
     Optional<InventoryBalance> findByWarehouse_IdAndBin_IdAndItem_Id(Long warehouseId, Long binId, Long itemId);
 
