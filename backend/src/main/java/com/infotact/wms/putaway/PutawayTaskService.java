@@ -1,18 +1,24 @@
 package com.infotact.wms.putaway;
 
+import com.infotact.wms.auth.User;
+import com.infotact.wms.auth.UserRepository;
 import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.common.web.Pageables;
 import com.infotact.wms.error.ConflictException;
 import com.infotact.wms.error.ResourceNotFoundException;
 import com.infotact.wms.inbound.InboundDocumentLine;
 import com.infotact.wms.inbound.InboundDocumentLineRepository;
+import com.infotact.wms.inventory.InventoryBalance;
 import com.infotact.wms.inventory.InventoryBalanceRepository;
+import com.infotact.wms.inventory.InventoryLedger;
+import com.infotact.wms.inventory.InventoryLedgerRepository;
 import com.infotact.wms.master.Bin;
 import com.infotact.wms.master.BinRepository;
 import com.infotact.wms.master.Item;
 import com.infotact.wms.master.ItemRepository;
 import com.infotact.wms.master.Warehouse;
 import com.infotact.wms.master.WarehouseRepository;
+import com.infotact.wms.putaway.dto.PutawayConfirmRequest;
 import com.infotact.wms.putaway.dto.PutawaySuggestionResponse;
 import com.infotact.wms.putaway.dto.PutawayTaskCreateRequest;
 import com.infotact.wms.putaway.dto.PutawayTaskResponse;
@@ -27,13 +33,19 @@ import java.math.BigDecimal;
 @Service
 public class PutawayTaskService {
 
+    public static final String LEDGER_REASON_PUTAWAY_OUT = "PUTAWAY_OUT";
+    public static final String LEDGER_REASON_PUTAWAY_IN = "PUTAWAY_IN";
+    public static final String REF_TYPE_PUTAWAY_TASK = "PUTAWAY_TASK";
+
     private final PutawayTaskRepository putawayTaskRepository;
     private final PutawaySuggestionService putawaySuggestionService;
     private final WarehouseRepository warehouseRepository;
     private final BinRepository binRepository;
     private final ItemRepository itemRepository;
     private final InventoryBalanceRepository inventoryBalanceRepository;
+    private final InventoryLedgerRepository inventoryLedgerRepository;
     private final InboundDocumentLineRepository inboundDocumentLineRepository;
+    private final UserRepository userRepository;
 
     public PutawayTaskService(
             PutawayTaskRepository putawayTaskRepository,
@@ -42,7 +54,9 @@ public class PutawayTaskService {
             BinRepository binRepository,
             ItemRepository itemRepository,
             InventoryBalanceRepository inventoryBalanceRepository,
-            InboundDocumentLineRepository inboundDocumentLineRepository
+            InventoryLedgerRepository inventoryLedgerRepository,
+            InboundDocumentLineRepository inboundDocumentLineRepository,
+            UserRepository userRepository
     ) {
         this.putawayTaskRepository = putawayTaskRepository;
         this.putawaySuggestionService = putawaySuggestionService;
@@ -50,7 +64,9 @@ public class PutawayTaskService {
         this.binRepository = binRepository;
         this.itemRepository = itemRepository;
         this.inventoryBalanceRepository = inventoryBalanceRepository;
+        this.inventoryLedgerRepository = inventoryLedgerRepository;
         this.inboundDocumentLineRepository = inboundDocumentLineRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional(readOnly = true)
@@ -137,6 +153,130 @@ public class PutawayTaskService {
         return PutawayMapper.toResponse(saved);
     }
 
+    @Transactional
+    public PutawayTaskResponse claim(long taskId, String username) {
+        PutawayTask task = putawayTaskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Putaway task not found: " + taskId));
+        if (task.getStatus() != PutawayTaskStatus.PENDING) {
+            throw new ConflictException("Putaway task is not claimable in status " + task.getStatus());
+        }
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
+        task.setAssignedUser(user);
+        task.setStatus(PutawayTaskStatus.IN_PROGRESS);
+        PutawayTask saved = putawayTaskRepository.save(task);
+        touch(saved);
+        return PutawayMapper.toResponse(saved);
+    }
+
+    @Transactional
+    public PutawayTaskResponse confirm(long taskId, String username, PutawayConfirmRequest request, boolean managerOrAdmin) {
+        PutawayTask task = putawayTaskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Putaway task not found: " + taskId));
+        if (task.getStatus() != PutawayTaskStatus.IN_PROGRESS) {
+            throw new ConflictException("Putaway task must be IN_PROGRESS to confirm (current: " + task.getStatus() + ")");
+        }
+        User actor = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
+        if (!managerOrAdmin && (task.getAssignedUser() == null || !task.getAssignedUser().getId().equals(actor.getId()))) {
+            throw new ConflictException("Putaway task is assigned to another user");
+        }
+
+        Warehouse warehouse = task.getWarehouse();
+        Bin fromBin = task.getFromBin();
+        Item item = task.getItem();
+        BigDecimal qty = task.getQuantity();
+
+        Long toBinId = request != null && request.toBinId() != null
+                ? request.toBinId()
+                : task.getSuggestedToBin().getId();
+        Bin toBin = loadActiveBinInWarehouse(toBinId, warehouse.getId());
+        if (toBin.getId().equals(fromBin.getId())) {
+            throw new ConflictException("Destination bin must differ from source bin");
+        }
+
+        InventoryBalance fromBalance = inventoryBalanceRepository
+                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), fromBin.getId(), item.getId())
+                .orElseThrow(() -> new ConflictException("No inventory at source bin for this item"));
+        if (fromBalance.getOnHandQty().compareTo(qty) < 0) {
+            throw new ConflictException("Insufficient on-hand at source bin (have " + fromBalance.getOnHandQty() + ")");
+        }
+
+        fromBalance.setOnHandQty(fromBalance.getOnHandQty().subtract(qty));
+        inventoryBalanceRepository.save(fromBalance);
+
+        InventoryBalance toBalance = inventoryBalanceRepository
+                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), toBin.getId(), item.getId())
+                .orElseGet(() -> newBalance(warehouse, toBin, item));
+        toBalance.setOnHandQty(toBalance.getOnHandQty().add(qty));
+        inventoryBalanceRepository.save(toBalance);
+
+        String note = request != null && request.note() != null && !request.note().isBlank()
+                ? request.note().trim()
+                : null;
+        String refNote = buildConfirmLedgerNote(note, fromBin, toBin);
+
+        InventoryLedger out = new InventoryLedger();
+        out.setWarehouse(warehouse);
+        out.setBin(fromBin);
+        out.setItem(item);
+        out.setQtyDelta(qty.negate());
+        out.setReason(LEDGER_REASON_PUTAWAY_OUT);
+        out.setRefType(REF_TYPE_PUTAWAY_TASK);
+        out.setRefDocumentId(task.getId());
+        out.setRefDocumentNumber("PUTAWAY-" + task.getId());
+        out.setNote(refNote);
+        inventoryLedgerRepository.save(out);
+
+        InventoryLedger in = new InventoryLedger();
+        in.setWarehouse(warehouse);
+        in.setBin(toBin);
+        in.setItem(item);
+        in.setQtyDelta(qty);
+        in.setReason(LEDGER_REASON_PUTAWAY_IN);
+        in.setRefType(REF_TYPE_PUTAWAY_TASK);
+        in.setRefDocumentId(task.getId());
+        in.setRefDocumentNumber("PUTAWAY-" + task.getId());
+        in.setNote(refNote);
+        inventoryLedgerRepository.save(in);
+
+        task.setConfirmedToBin(toBin);
+        task.setStatus(PutawayTaskStatus.COMPLETED);
+        PutawayTask saved = putawayTaskRepository.save(task);
+        touch(saved);
+        return PutawayMapper.toResponse(saved);
+    }
+
+    private static String buildConfirmLedgerNote(String userNote, Bin from, Bin to) {
+        String move = "from=" + from.getCode() + " to=" + to.getCode();
+        if (userNote == null || userNote.isEmpty()) {
+            return move;
+        }
+        return userNote + " | " + move;
+    }
+
+    private static InventoryBalance newBalance(Warehouse warehouse, Bin bin, Item item) {
+        InventoryBalance b = new InventoryBalance();
+        b.setWarehouse(warehouse);
+        b.setBin(bin);
+        b.setItem(item);
+        b.setOnHandQty(BigDecimal.ZERO);
+        b.setReservedQty(BigDecimal.ZERO);
+        return b;
+    }
+
+    private Bin loadActiveBinInWarehouse(Long binId, Long warehouseId) {
+        Bin bin = binRepository.findById(binId)
+                .orElseThrow(() -> new ResourceNotFoundException("Bin not found: " + binId));
+        if (!bin.isActive()) {
+            throw new ConflictException("Bin is not active: " + binId);
+        }
+        if (!bin.getZone().getWarehouse().getId().equals(warehouseId)) {
+            throw new ConflictException("Bin is not in the task warehouse");
+        }
+        return bin;
+    }
+
     private static void touch(PutawayTask t) {
         t.getWarehouse().getId();
         t.getFromBin().getCode();
@@ -144,6 +284,12 @@ public class PutawayTaskService {
         t.getItem().getSku();
         if (t.getInboundLine() != null) {
             t.getInboundLine().getId();
+        }
+        if (t.getAssignedUser() != null) {
+            t.getAssignedUser().getUsername();
+        }
+        if (t.getConfirmedToBin() != null) {
+            t.getConfirmedToBin().getCode();
         }
     }
 

@@ -1,5 +1,6 @@
 package com.infotact.wms.putaway;
 
+import com.infotact.wms.auth.User;
 import com.infotact.wms.inbound.InboundDocumentLine;
 import com.infotact.wms.master.Bin;
 import com.infotact.wms.master.Item;
@@ -65,6 +66,14 @@ public class PutawayTask {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inbound_document_line_id")
     private InboundDocumentLine inboundLine;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_user_id")
+    private User assignedUser;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "confirmed_to_bin_id")
+    private Bin confirmedToBin;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

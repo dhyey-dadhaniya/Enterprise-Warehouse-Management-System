@@ -42,9 +42,6 @@ class PutawayTaskApiTest {
     WarehouseRepository warehouseRepository;
 
     @Autowired
-    ZoneRepository zoneRepository;
-
-    @Autowired
     BinRepository binRepository;
 
     @Autowired
@@ -153,6 +150,25 @@ class PutawayTaskApiTest {
 
         long taskId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
         assertThat(taskId).isPositive();
+
+        mockMvc.perform(post("/api/putaway-tasks/" + taskId + "/claim")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.assignedUsername").value("admin"));
+
+        mockMvc.perform(post("/api/putaway-tasks/" + taskId + "/confirm")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.confirmedToBinId").value((int) hiBinId));
+
+        assertThat(inventoryBalanceRepository.findByWarehouse_IdAndBin_IdAndItem_Id(whId, stageBinId, itemId).orElseThrow()
+                .getOnHandQty()).isEqualByComparingTo(new BigDecimal("8"));
+        assertThat(inventoryBalanceRepository.findByWarehouse_IdAndBin_IdAndItem_Id(whId, hiBinId, itemId).orElseThrow()
+                .getOnHandQty()).isEqualByComparingTo(new BigDecimal("52"));
     }
 
     private void saveBalance(Warehouse wh, Bin bin, Item item, BigDecimal onHand) {

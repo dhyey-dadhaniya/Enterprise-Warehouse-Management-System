@@ -1,6 +1,7 @@
 package com.infotact.wms.putaway;
 
 import com.infotact.wms.common.dto.PageResponse;
+import com.infotact.wms.putaway.dto.PutawayConfirmRequest;
 import com.infotact.wms.putaway.dto.PutawaySuggestionResponse;
 import com.infotact.wms.putaway.dto.PutawayTaskCreateRequest;
 import com.infotact.wms.putaway.dto.PutawayTaskResponse;
@@ -12,6 +13,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -59,5 +62,27 @@ public class PutawayTaskController {
     public ResponseEntity<PutawayTaskResponse> create(@Valid @RequestBody PutawayTaskCreateRequest request) {
         PutawayTaskResponse body = putawayTaskService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    @PostMapping("/{id}/claim")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    public PutawayTaskResponse claim(@PathVariable Long id, Authentication authentication) {
+        return putawayTaskService.claim(id, authentication.getName());
+    }
+
+    @PostMapping("/{id}/confirm")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    public PutawayTaskResponse confirm(
+            @PathVariable Long id,
+            Authentication authentication,
+            @RequestBody(required = false) @Valid PutawayConfirmRequest body
+    ) {
+        boolean privileged = authentication.getAuthorities().stream().anyMatch(PutawayTaskController::isManagerOrAdmin);
+        return putawayTaskService.confirm(id, authentication.getName(), body, privileged);
+    }
+
+    private static boolean isManagerOrAdmin(GrantedAuthority a) {
+        String r = a.getAuthority();
+        return "ROLE_ADMIN".equals(r) || "ROLE_MANAGER".equals(r);
     }
 }
