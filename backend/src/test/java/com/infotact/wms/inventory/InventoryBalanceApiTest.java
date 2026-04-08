@@ -93,6 +93,15 @@ class InventoryBalanceApiTest {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].binCode").value("B-INV"))
                 .andExpect(jsonPath("$.content[0].availableQty").value(2));
+
+        mockMvc.perform(get("/api/inventory/balances")
+                        .header("Authorization", "Bearer " + token)
+                        .param("warehouseId", String.valueOf(whId))
+                        .param("zoneCode", "Z1")
+                        .param("binCode", "B-INV"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].binCode").value("B-INV"));
     }
 
     @Test

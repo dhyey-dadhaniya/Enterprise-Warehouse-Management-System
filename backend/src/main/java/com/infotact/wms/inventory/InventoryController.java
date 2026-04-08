@@ -28,19 +28,22 @@ public class InventoryController {
 
     /**
      * Paginated stock positions with on-hand, reserved, and available (on-hand minus reserved).
-     * Filter by warehouse, zone, bin, item, and/or SKU substring.
+     * Filter by warehouse, zone/bin (id or code substring), item, and/or SKU substring.
      */
     @GetMapping("/balances")
     public PageResponse<InventoryBalanceResponse> listBalances(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) Long zoneId,
             @RequestParam(required = false) Long binId,
+            @RequestParam(required = false) String zoneCode,
+            @RequestParam(required = false) String binCode,
             @RequestParam(required = false) Long itemId,
             @RequestParam(required = false) String sku,
             @RequestParam(required = false, defaultValue = "false") boolean nonZeroOnly,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return inventoryBalanceService.search(warehouseId, zoneId, binId, itemId, sku, nonZeroOnly, pageable);
+        return inventoryBalanceService.search(
+                warehouseId, zoneId, binId, zoneCode, binCode, itemId, sku, nonZeroOnly, pageable);
     }
 
     /**

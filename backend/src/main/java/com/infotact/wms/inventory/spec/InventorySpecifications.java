@@ -58,6 +58,26 @@ public final class InventorySpecifications {
         };
     }
 
+    public static Specification<InventoryBalance> zoneCodeContains(String zoneCodeFragment) {
+        return (root, query, cb) -> {
+            if (zoneCodeFragment == null || zoneCodeFragment.isBlank()) {
+                return cb.conjunction();
+            }
+            String p = "%" + zoneCodeFragment.trim().toLowerCase(Locale.ROOT) + "%";
+            return cb.like(cb.lower(root.get("bin").get("zone").get("code")), p);
+        };
+    }
+
+    public static Specification<InventoryBalance> binCodeContains(String binCodeFragment) {
+        return (root, query, cb) -> {
+            if (binCodeFragment == null || binCodeFragment.isBlank()) {
+                return cb.conjunction();
+            }
+            String p = "%" + binCodeFragment.trim().toLowerCase(Locale.ROOT) + "%";
+            return cb.like(cb.lower(root.get("bin").get("code")), p);
+        };
+    }
+
     public static Specification<InventoryBalance> nonZeroOnly(boolean enabled) {
         return (root, query, cb) -> {
             if (!enabled) {

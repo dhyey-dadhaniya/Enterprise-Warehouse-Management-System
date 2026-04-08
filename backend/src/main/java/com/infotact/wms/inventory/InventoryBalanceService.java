@@ -27,6 +27,8 @@ public class InventoryBalanceService {
             Long warehouseId,
             Long zoneId,
             Long binId,
+            String zoneCode,
+            String binCode,
             Long itemId,
             String sku,
             boolean nonZeroOnly,
@@ -37,6 +39,8 @@ public class InventoryBalanceService {
                 .where(InventorySpecifications.inWarehouse(warehouseId))
                 .and(InventorySpecifications.inZone(zoneId))
                 .and(InventorySpecifications.inBin(binId))
+                .and(InventorySpecifications.zoneCodeContains(zoneCode))
+                .and(InventorySpecifications.binCodeContains(binCode))
                 .and(InventorySpecifications.forItem(itemId))
                 .and(InventorySpecifications.skuContains(sku))
                 .and(InventorySpecifications.nonZeroOnly(nonZeroOnly));
