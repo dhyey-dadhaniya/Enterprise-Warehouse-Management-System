@@ -34,11 +34,21 @@ public class TestUsersBootstrap implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        Role manager = roleRepository.findByName("MANAGER")
+                .orElseThrow(() -> new IllegalStateException("MANAGER role missing"));
         Role receiver = roleRepository.findByName("RECEIVER")
                 .orElseThrow(() -> new IllegalStateException("RECEIVER role missing"));
         Role picker = roleRepository.findByName("PICKER")
                 .orElseThrow(() -> new IllegalStateException("PICKER role missing"));
 
+        if (!userRepository.existsByUsername("manager")) {
+            User u = new User();
+            u.setUsername("manager");
+            u.setPasswordHash(passwordEncoder.encode("mgr123"));
+            u.setEnabled(true);
+            u.setRoles(Set.of(manager));
+            userRepository.save(u);
+        }
         if (!userRepository.existsByUsername("receiver")) {
             User u = new User();
             u.setUsername("receiver");
