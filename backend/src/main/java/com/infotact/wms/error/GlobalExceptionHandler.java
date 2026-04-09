@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final String HEADER_REQUEST_ID = com.infotact.wms.common.web.RequestIdFilter.HEADER_REQUEST_ID;
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
         Map<String, String> fields = ex.getBindingResult().getFieldErrors().stream()
@@ -36,7 +38,9 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 fields
         );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -53,7 +57,9 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 fields
         );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -64,7 +70,9 @@ public class GlobalExceptionHandler {
                 "Request body is missing or invalid JSON",
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -75,7 +83,9 @@ public class GlobalExceptionHandler {
                 "Invalid parameter: " + ex.getName(),
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -86,7 +96,9 @@ public class GlobalExceptionHandler {
                 ex.getMessage(),
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(ConflictException.class)
@@ -97,7 +109,9 @@ public class GlobalExceptionHandler {
                 ex.getMessage(),
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -108,7 +122,9 @@ public class GlobalExceptionHandler {
                 "Data conflict (duplicate or invalid reference)",
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(BadCredentialsException.class)
@@ -119,7 +135,9 @@ public class GlobalExceptionHandler {
                 "Invalid username or password",
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
     }
 
     @ExceptionHandler(Exception.class)
@@ -130,6 +148,13 @@ public class GlobalExceptionHandler {
                 "Something went wrong",
                 req.getRequestURI()
         );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
+    }
+
+    private static String currentRequestId(HttpServletRequest req) {
+        String v = req.getHeader(HEADER_REQUEST_ID);
+        return v == null ? "" : v;
     }
 }
