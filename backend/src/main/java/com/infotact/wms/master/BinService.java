@@ -19,10 +19,12 @@ import java.util.Locale;
 public class BinService {
 
     private final ZoneRepository zoneRepository;
+    private final AisleRepository aisleRepository;
     private final BinRepository binRepository;
 
-    public BinService(ZoneRepository zoneRepository, BinRepository binRepository) {
+    public BinService(ZoneRepository zoneRepository, AisleRepository aisleRepository, BinRepository binRepository) {
         this.zoneRepository = zoneRepository;
+        this.aisleRepository = aisleRepository;
         this.binRepository = binRepository;
     }
 
@@ -47,12 +49,14 @@ public class BinService {
     @Transactional
     public BinResponse create(Long zoneId, BinRequest request) {
         Zone zone = ensureZone(zoneId);
+        Aisle aisle = request.aisleId() == null ? null : ensureAisleInZone(request.aisleId(), zoneId);
         String code = normalizeCode(request.code());
         if (binRepository.existsByZone_IdAndCodeIgnoreCase(zoneId, code)) {
             throw new ConflictException("Bin code already exists in this zone: " + code);
         }
         Bin b = new Bin();
         b.setZone(zone);
+        b.setAisle(aisle);
         b.setCode(code);
         b.setDescription(trimToNull(request.description()));
         b.setActive(request.active() == null || request.active());
@@ -72,6 +76,11 @@ public class BinService {
         }
         b.setCode(code);
         b.setDescription(trimToNull(request.description()));
+        if (request.aisleId() != null) {
+            b.setAisle(ensureAisleInZone(request.aisleId(), zid));
+        } else {
+            b.setAisle(null);
+        }
         if (request.active() != null) {
             b.setActive(request.active());
         }
@@ -91,8 +100,20 @@ public class BinService {
                 .orElseThrow(() -> new ResourceNotFoundException("Zone not found: " + zoneId));
     }
 
+    private Aisle ensureAisleInZone(Long aisleId, Long zoneId) {
+        Aisle a = aisleRepository.findById(aisleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Aisle not found: " + aisleId));
+        if (!a.getZone().getId().equals(zoneId)) {
+            throw new ConflictException("Aisle is not in the given zone");
+        }
+        return a;
+    }
+
     private static void touchAssociations(Bin b) {
         b.getZone().getWarehouse().getId();
+        if (b.getAisle() != null) {
+            b.getAisle().getId();
+        }
     }
 
     private static String normalizeCode(String code) {

@@ -4,6 +4,7 @@ import com.infotact.wms.master.Bin;
 import com.infotact.wms.master.Item;
 import com.infotact.wms.master.Warehouse;
 import com.infotact.wms.master.Zone;
+import com.infotact.wms.master.Aisle;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.Locale;
@@ -31,6 +32,23 @@ public final class MasterSpecifications {
     }
 
     public static Specification<Zone> zoneSearch(String q) {
+        return (root, query, cb) -> {
+            if (q == null || q.isBlank()) {
+                return cb.conjunction();
+            }
+            String p = "%" + q.trim().toLowerCase(Locale.ROOT) + "%";
+            return cb.or(
+                    cb.like(cb.lower(root.get("code")), p),
+                    cb.like(cb.lower(root.get("name")), p)
+            );
+        };
+    }
+
+    public static Specification<Aisle> aisleInZone(Long zoneId) {
+        return (root, query, cb) -> cb.equal(root.get("zone").get("id"), zoneId);
+    }
+
+    public static Specification<Aisle> aisleSearch(String q) {
         return (root, query, cb) -> {
             if (q == null || q.isBlank()) {
                 return cb.conjunction();

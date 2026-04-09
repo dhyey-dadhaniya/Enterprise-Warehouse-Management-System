@@ -222,7 +222,7 @@ public class PutawayTaskService {
         }
 
         InventoryBalance fromBalance = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), fromBin.getId(), item.getId())
+                .findForUpdate(warehouse.getId(), fromBin.getId(), item.getId())
                 .orElseThrow(() -> new ConflictException("No inventory at source bin for this item"));
         if (fromBalance.getOnHandQty().compareTo(qty) < 0) {
             throw new ConflictException("Insufficient on-hand at source bin (have " + fromBalance.getOnHandQty() + ")");
@@ -232,7 +232,7 @@ public class PutawayTaskService {
         inventoryBalanceRepository.save(fromBalance);
 
         InventoryBalance toBalance = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), toBin.getId(), item.getId())
+                .findForUpdate(warehouse.getId(), toBin.getId(), item.getId())
                 .orElseGet(() -> newBalance(warehouse, toBin, item));
         toBalance.setOnHandQty(toBalance.getOnHandQty().add(qty));
         inventoryBalanceRepository.save(toBalance);
