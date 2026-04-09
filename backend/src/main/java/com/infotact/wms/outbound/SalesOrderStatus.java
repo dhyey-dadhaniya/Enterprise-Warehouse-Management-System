@@ -1,9 +1,9 @@
 package com.infotact.wms.outbound;
 
 public enum SalesOrderStatus {
-    OPEN,
-    ALLOCATED,
+    PENDING,
     PICKING,
-    COMPLETED,
+    PACKED,
+    SHIPPED,
     CANCELLED
 }

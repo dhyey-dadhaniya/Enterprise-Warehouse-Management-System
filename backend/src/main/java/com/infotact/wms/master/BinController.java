@@ -48,7 +48,7 @@ public class BinController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BinResponse> create(
             @RequestParam("zoneId") Long zoneId,
             @Valid @RequestBody BinRequest request
@@ -58,13 +58,13 @@ public class BinController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public BinResponse update(@PathVariable Long id, @Valid @RequestBody BinRequest request) {
         return binService.update(id, request);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         binService.delete(id);
         return ResponseEntity.noContent().build();

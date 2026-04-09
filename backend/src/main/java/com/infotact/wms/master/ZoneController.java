@@ -47,7 +47,7 @@ public class ZoneController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ZoneResponse> create(
             @RequestParam("warehouseId") Long warehouseId,
             @Valid @RequestBody ZoneRequest request
@@ -57,13 +57,13 @@ public class ZoneController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ZoneResponse update(@PathVariable Long id, @Valid @RequestBody ZoneRequest request) {
         return zoneService.update(id, request);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         zoneService.delete(id);
         return ResponseEntity.noContent().build();

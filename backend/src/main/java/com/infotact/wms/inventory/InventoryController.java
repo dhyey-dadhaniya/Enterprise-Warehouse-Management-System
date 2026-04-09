@@ -78,7 +78,7 @@ public class InventoryController {
      * Cycle count / damage / correction / quarantine reclass: single-bin quantity change with ledger line.
      */
     @PostMapping("/adjustments")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<InventoryAdjustmentResponse> adjust(
             @Valid @RequestBody InventoryAdjustmentRequest request,
             Authentication authentication,
@@ -92,7 +92,7 @@ public class InventoryController {
      * Move quantity between bins (same warehouse); paired TRANSFER_OUT / TRANSFER_IN ledger lines.
      */
     @PostMapping("/transfers")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<InventoryTransferResponse> transfer(
             @Valid @RequestBody InventoryTransferRequest request,
             Authentication authentication,

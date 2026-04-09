@@ -20,13 +20,13 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(
-        name = "bins",
+        name = "aisles",
         uniqueConstraints = @UniqueConstraint(columnNames = {"zone_id", "code"})
 )
 @Getter
 @Setter
 @NoArgsConstructor
-public class Bin {
+public class Aisle {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -36,18 +36,11 @@ public class Bin {
     @JoinColumn(name = "zone_id", nullable = false)
     private Zone zone;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "aisle_id")
-    private Aisle aisle;
-
     @Column(nullable = false, length = 64)
     private String code;
 
-    @Column(length = 512)
-    private String description;
-
-    @Column(nullable = false)
-    private boolean active = true;
+    @Column(nullable = false, length = 255)
+    private String name;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

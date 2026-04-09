@@ -45,8 +45,8 @@ public class PickWaveService {
             if (!o.getWarehouse().getId().equals(wh.getId())) {
                 throw new ConflictException("Sales order " + id + " is not in the target warehouse");
             }
-            if (o.getStatus() != SalesOrderStatus.ALLOCATED) {
-                throw new ConflictException("Sales order " + id + " must be ALLOCATED (current: " + o.getStatus() + ")");
+            if (o.getStatus() != SalesOrderStatus.PENDING) {
+                throw new ConflictException("Sales order " + id + " must be PENDING (current: " + o.getStatus() + ")");
             }
             orders.add(o);
         }

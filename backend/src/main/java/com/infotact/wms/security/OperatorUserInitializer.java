@@ -1,4 +1,4 @@
-package com.infotact.wms.testsupport;
+package com.infotact.wms.security;
 
 import com.infotact.wms.auth.Role;
 import com.infotact.wms.auth.RoleRepository;
@@ -14,15 +14,15 @@ import org.springframework.stereotype.Component;
 import java.util.Set;
 
 @Component
-@Profile("test")
+@Profile("!test")
 @Order(2)
-public class TestUsersBootstrap implements ApplicationRunner {
+public class OperatorUserInitializer implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public TestUsersBootstrap(
+    public OperatorUserInitializer(
             UserRepository userRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder
@@ -34,16 +34,16 @@ public class TestUsersBootstrap implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        Role operator = roleRepository.findByName("OPERATOR")
-                .orElseThrow(() -> new IllegalStateException("OPERATOR role missing; check Flyway V14"));
-
-        if (!userRepository.existsByUsername("operator")) {
-            User u = new User();
-            u.setUsername("operator");
-            u.setPasswordHash(passwordEncoder.encode("op123"));
-            u.setEnabled(true);
-            u.setRoles(Set.of(operator));
-            userRepository.save(u);
+        if (userRepository.existsByUsername("operator")) {
+            return;
         }
+        Role operatorRole = roleRepository.findByName("OPERATOR")
+                .orElseThrow(() -> new IllegalStateException("OPERATOR role missing; check Flyway V14"));
+        User operator = new User();
+        operator.setUsername("operator");
+        operator.setPasswordHash(passwordEncoder.encode("op123"));
+        operator.setEnabled(true);
+        operator.setRoles(Set.of(operatorRole));
+        userRepository.save(operator);
     }
 }

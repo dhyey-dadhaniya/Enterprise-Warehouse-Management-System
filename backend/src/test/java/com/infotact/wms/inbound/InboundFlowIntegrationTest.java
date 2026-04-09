@@ -66,9 +66,8 @@ class InboundFlowIntegrationTest {
     }
 
     @Test
-    void receiverRunsReceivePostPutawayAndManagerConfirms() throws Exception {
-        String recvToken = login("receiver", "recv123");
-        String managerToken = login("manager", "mgr123");
+    void operatorRunsReceivePostPutawayAndAdminConfirms() throws Exception {
+        String opToken = login("operator", "op123");
         String adminToken = login("admin", "admin123");
         String suffix = String.valueOf(System.nanoTime());
 
@@ -80,7 +79,7 @@ class InboundFlowIntegrationTest {
 
         String docNo = "ASN-E2E-" + suffix;
         MvcResult docRes = mockMvc.perform(post("/api/inbound-documents")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -97,13 +96,13 @@ class InboundFlowIntegrationTest {
                 .get("lines").get(0).get("id").asLong();
 
         mockMvc.perform(patch("/api/inbound-documents/" + docId + "/status")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"OPEN\"}"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(put("/api/inbound-documents/" + docId + "/lines/" + lineId)
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"receivedQty\": 10}"))
                 .andExpect(status().isOk());
@@ -111,7 +110,7 @@ class InboundFlowIntegrationTest {
         long ledgerBeforePutaway = inventoryLedgerRepository.count();
 
         mockMvc.perform(post("/api/inbound-documents/" + docId + "/lines/" + lineId + "/post-receipt")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "stagingBinId": %d, "quantity": 10 }
@@ -123,7 +122,7 @@ class InboundFlowIntegrationTest {
                 .getOnHandQty()).isEqualByComparingTo(new BigDecimal("10"));
 
         MvcResult taskRes = mockMvc.perform(post("/api/putaway-tasks")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -140,12 +139,12 @@ class InboundFlowIntegrationTest {
         long taskId = objectMapper.readTree(taskRes.getResponse().getContentAsString()).get("id").asLong();
 
         mockMvc.perform(post("/api/putaway-tasks/" + taskId + "/claim")
-                        .header("Authorization", "Bearer " + recvToken))
+                        .header("Authorization", "Bearer " + opToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.assignedUsername").value("receiver"));
+                .andExpect(jsonPath("$.assignedUsername").value("operator"));
 
         mockMvc.perform(post("/api/putaway-tasks/" + taskId + "/confirm")
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"note\":\"mgr override\"}"))
                 .andExpect(status().isOk())
@@ -165,9 +164,9 @@ class InboundFlowIntegrationTest {
     }
 
     @Test
-    void pickerCannotCreatePutawayTask() throws Exception {
+    void operatorCanCreatePutawayTask() throws Exception {
         String adminToken = login("admin", "admin123");
-        String pickerToken = login("picker", "pick123");
+        String opToken = login("operator", "op123");
         String suffix = String.valueOf(System.nanoTime());
 
         long whId = postWarehouse(adminToken, "PW2-" + suffix);
@@ -188,7 +187,7 @@ class InboundFlowIntegrationTest {
         inventoryBalanceRepository.save(b);
 
         mockMvc.perform(post("/api/putaway-tasks")
-                        .header("Authorization", "Bearer " + pickerToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -198,13 +197,12 @@ class InboundFlowIntegrationTest {
                                   "quantity": 1
                                 }
                                 """.formatted(whId, binId, itemId)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isCreated());
     }
 
     @Test
-    void pickerCannotPostReceipt() throws Exception {
+    void postReceiptRequiresAuthentication() throws Exception {
         String adminToken = login("admin", "admin123");
-        String pickerToken = login("picker", "pick123");
         String suffix = String.valueOf(System.nanoTime());
 
         long whId = postWarehouse(adminToken, "PR-" + suffix);
@@ -242,17 +240,16 @@ class InboundFlowIntegrationTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/inbound-documents/" + docId + "/lines/" + lineId + "/post-receipt")
-                        .header("Authorization", "Bearer " + pickerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "stagingBinId": %d, "quantity": 1 }
                                 """.formatted(binId)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void receiverCannotConfirmPutawayBeforeClaim() throws Exception {
-        String recvToken = login("receiver", "recv123");
+    void operatorCannotConfirmPutawayBeforeClaim() throws Exception {
+        String opToken = login("operator", "op123");
         String adminToken = login("admin", "admin123");
         String suffix = String.valueOf(System.nanoTime());
 
@@ -264,7 +261,7 @@ class InboundFlowIntegrationTest {
 
         String docNo = "ASN-PC-" + suffix;
         MvcResult docRes = mockMvc.perform(post("/api/inbound-documents")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -281,17 +278,17 @@ class InboundFlowIntegrationTest {
                 .get("lines").get(0).get("id").asLong();
 
         mockMvc.perform(patch("/api/inbound-documents/" + docId + "/status")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"OPEN\"}"))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/inbound-documents/" + docId + "/lines/" + lineId)
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"receivedQty\": 3}"))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/inbound-documents/" + docId + "/lines/" + lineId + "/post-receipt")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "stagingBinId": %d, "quantity": 3 }
@@ -299,7 +296,7 @@ class InboundFlowIntegrationTest {
                 .andExpect(status().isOk());
 
         MvcResult taskRes = mockMvc.perform(post("/api/putaway-tasks")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -314,7 +311,7 @@ class InboundFlowIntegrationTest {
         long taskId = objectMapper.readTree(taskRes.getResponse().getContentAsString()).get("id").asLong();
 
         mockMvc.perform(post("/api/putaway-tasks/" + taskId + "/confirm")
-                        .header("Authorization", "Bearer " + recvToken)
+                        .header("Authorization", "Bearer " + opToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isConflict());

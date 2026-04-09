@@ -27,7 +27,7 @@ public class PickWaveController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PickWaveResponse> create(@Valid @RequestBody PickWaveCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(pickWaveService.create(request));
     }

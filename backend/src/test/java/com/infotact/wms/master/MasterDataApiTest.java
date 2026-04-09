@@ -49,19 +49,19 @@ class MasterDataApiTest {
     @BeforeEach
     void loginAdmin() throws Exception {
         adminToken = obtainToken("admin", "admin123");
-        ensurePickerUser();
+        ensureOperatorUser();
     }
 
-    private void ensurePickerUser() {
-        if (userRepository.existsByUsername("picker")) {
+    private void ensureOperatorUser() {
+        if (userRepository.existsByUsername("operator")) {
             return;
         }
-        Role picker = roleRepository.findByName("PICKER").orElseThrow();
+        Role operator = roleRepository.findByName("OPERATOR").orElseThrow();
         User u = new User();
-        u.setUsername("picker");
-        u.setPasswordHash(passwordEncoder.encode("picker123"));
+        u.setUsername("operator");
+        u.setPasswordHash(passwordEncoder.encode("op123"));
         u.setEnabled(true);
-        u.setRoles(Set.of(picker));
+        u.setRoles(Set.of(operator));
         userRepository.save(u);
     }
 
@@ -128,10 +128,10 @@ class MasterDataApiTest {
     }
 
     @Test
-    void pickerCannotCreateWarehouse() throws Exception {
-        String pickerToken = obtainToken("picker", "picker123");
+    void operatorCannotCreateWarehouse() throws Exception {
+        String operatorToken = obtainToken("operator", "op123");
         mockMvc.perform(post("/api/warehouses")
-                        .header("Authorization", "Bearer " + pickerToken)
+                        .header("Authorization", "Bearer " + operatorToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"NOPE\",\"name\":\"x\"}"))
                 .andExpect(status().isForbidden());

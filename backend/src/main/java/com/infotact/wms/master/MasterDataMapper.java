@@ -1,6 +1,7 @@
 package com.infotact.wms.master;
 
 import com.infotact.wms.master.dto.BinResponse;
+import com.infotact.wms.master.dto.AisleResponse;
 import com.infotact.wms.master.dto.ItemResponse;
 import com.infotact.wms.master.dto.WarehouseResponse;
 import com.infotact.wms.master.dto.ZoneResponse;
@@ -32,11 +33,24 @@ final class MasterDataMapper {
         );
     }
 
+    static AisleResponse toResponse(Aisle a) {
+        return new AisleResponse(
+                a.getId(),
+                a.getZone().getId(),
+                a.getZone().getWarehouse().getId(),
+                a.getCode(),
+                a.getName(),
+                a.getCreatedAt(),
+                a.getUpdatedAt()
+        );
+    }
+
     static BinResponse toResponse(Bin b) {
         return new BinResponse(
                 b.getId(),
                 b.getZone().getId(),
                 b.getZone().getWarehouse().getId(),
+                b.getAisle() == null ? null : b.getAisle().getId(),
                 b.getCode(),
                 b.getDescription(),
                 b.isActive(),

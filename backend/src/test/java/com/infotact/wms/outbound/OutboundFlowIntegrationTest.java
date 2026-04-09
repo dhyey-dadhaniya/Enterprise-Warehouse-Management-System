@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -63,7 +64,7 @@ class OutboundFlowIntegrationTest {
     }
 
     @Test
-    void allocateWavePickConfirmCompletesOrderAndWritesLedger() throws Exception {
+    void allocateWavePickConfirmPackShipUpdatesInventoryAndWritesLedger() throws Exception {
         String token = adminToken();
         String suffix = String.valueOf(System.nanoTime());
 
@@ -96,14 +97,14 @@ class OutboundFlowIntegrationTest {
                                 }
                                 """.formatted(suffix, whId, itemId)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
                 .andReturn();
         long orderId = objectMapper.readTree(orderRes.getResponse().getContentAsString()).get("id").asLong();
 
         mockMvc.perform(post("/api/sales-orders/" + orderId + "/allocate")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ALLOCATED"));
+                .andExpect(jsonPath("$.status").value("PENDING"));
 
         assertThat(inventoryBalanceRepository
                 .findByWarehouse_IdAndBin_IdAndItem_Id(whId, binPick, itemId).orElseThrow()
@@ -139,7 +140,26 @@ class OutboundFlowIntegrationTest {
         mockMvc.perform(get("/api/sales-orders/" + orderId)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("PICKING"));
+
+        // Inventory is decremented when order is PACKED (not when pick is confirmed).
+        assertThat(inventoryBalanceRepository
+                .findByWarehouse_IdAndBin_IdAndItem_Id(whId, binPick, itemId).orElseThrow()
+                .getOnHandQty()).isEqualByComparingTo(new BigDecimal("20"));
+        assertThat(inventoryBalanceRepository
+                .findByWarehouse_IdAndBin_IdAndItem_Id(whId, binPick, itemId).orElseThrow()
+                .getReservedQty()).isEqualByComparingTo(new BigDecimal("7"));
+
+        assertThat(inventoryLedgerRepository.count()).isEqualTo(ledgersBefore + 1);
+        assertThat(inventoryLedgerRepository.findAll().stream()
+                .filter(l -> "OUTBOUND_PICK_CONFIRMED".equals(l.getReason()) && orderId == l.getRefDocumentId())
+                .count()).isEqualTo(1);
+
+        mockMvc.perform(patch("/api/sales-orders/" + orderId + "/pack")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", "pack-" + suffix))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PACKED"));
 
         assertThat(inventoryBalanceRepository
                 .findByWarehouse_IdAndBin_IdAndItem_Id(whId, binPick, itemId).orElseThrow()
@@ -148,9 +168,14 @@ class OutboundFlowIntegrationTest {
                 .findByWarehouse_IdAndBin_IdAndItem_Id(whId, binPick, itemId).orElseThrow()
                 .getReservedQty()).isEqualByComparingTo(BigDecimal.ZERO);
 
-        assertThat(inventoryLedgerRepository.count()).isEqualTo(ledgersBefore + 1);
+        mockMvc.perform(patch("/api/sales-orders/" + orderId + "/ship")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SHIPPED"));
+
+        assertThat(inventoryLedgerRepository.count()).isEqualTo(ledgersBefore + 2);
         assertThat(inventoryLedgerRepository.findAll().stream()
-                .filter(l -> "OUTBOUND_PICK".equals(l.getReason()) && orderId == l.getRefDocumentId())
+                .filter(l -> "OUTBOUND_PACK".equals(l.getReason()) && orderId == l.getRefDocumentId())
                 .count()).isEqualTo(1);
     }
 

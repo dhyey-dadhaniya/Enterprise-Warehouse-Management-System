@@ -1,8 +1,8 @@
 package com.infotact.wms.master;
 
 import com.infotact.wms.common.dto.PageResponse;
-import com.infotact.wms.master.dto.ItemRequest;
-import com.infotact.wms.master.dto.ItemResponse;
+import com.infotact.wms.master.dto.AisleRequest;
+import com.infotact.wms.master.dto.AisleResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -21,48 +21,52 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/items")
-@Tag(name = "Items")
+@RequestMapping("/api/aisles")
+@Tag(name = "Aisles")
 @PreAuthorize("isAuthenticated()")
-public class ItemController {
+public class AisleController {
 
-    private final ItemService itemService;
+    private final AisleService aisleService;
 
-    public ItemController(ItemService itemService) {
-        this.itemService = itemService;
+    public AisleController(AisleService aisleService) {
+        this.aisleService = aisleService;
     }
 
     @GetMapping
-    public PageResponse<ItemResponse> list(
+    public PageResponse<AisleResponse> list(
+            @RequestParam("zoneId") Long zoneId,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Boolean active,
-            @PageableDefault(size = 20, sort = "sku") Pageable pageable
+            @PageableDefault(size = 20, sort = "code") Pageable pageable
     ) {
-        return itemService.list(q, active, pageable);
+        return aisleService.listByZone(zoneId, q, pageable);
     }
 
     @GetMapping("/{id}")
-    public ItemResponse get(@PathVariable Long id) {
-        return itemService.get(id);
+    public AisleResponse get(@PathVariable Long id) {
+        return aisleService.get(id);
     }
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ItemResponse> create(@Valid @RequestBody ItemRequest request) {
-        ItemResponse body = itemService.create(request);
+    public ResponseEntity<AisleResponse> create(
+            @RequestParam("zoneId") Long zoneId,
+            @Valid @RequestBody AisleRequest request
+    ) {
+        AisleResponse body = aisleService.create(zoneId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ItemResponse update(@PathVariable Long id, @Valid @RequestBody ItemRequest request) {
-        return itemService.update(id, request);
+    public AisleResponse update(@PathVariable Long id, @Valid @RequestBody AisleRequest request) {
+        return aisleService.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        itemService.delete(id);
+        aisleService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }
+

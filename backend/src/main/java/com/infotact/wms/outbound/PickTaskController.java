@@ -37,7 +37,7 @@ public class PickTaskController {
     }
 
     @PostMapping("/{id}/confirm-pick")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','PICKER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public PickTaskResponse confirmPick(
             @PathVariable Long id,
             Authentication authentication,

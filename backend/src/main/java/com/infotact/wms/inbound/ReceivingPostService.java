@@ -107,7 +107,7 @@ public class ReceivingPostService {
 
         Item item = line.getItem();
         InventoryBalance balance = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), stagingBin.getId(), item.getId())
+                .findForUpdate(warehouse.getId(), stagingBin.getId(), item.getId())
                 .orElseGet(() -> newBalance(warehouse, stagingBin, item));
         balance.setOnHandQty(balance.getOnHandQty().add(qty));
         inventoryBalanceRepository.save(balance);

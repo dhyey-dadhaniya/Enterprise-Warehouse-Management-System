@@ -63,26 +63,26 @@ public class InboundDocumentController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public ResponseEntity<InboundDocumentResponse> create(@Valid @RequestBody InboundDocumentCreateRequest request) {
         InboundDocumentResponse body = inboundDocumentService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public InboundDocumentResponse updateHeader(@PathVariable Long id, @Valid @RequestBody InboundDocumentUpdateRequest request) {
         return inboundDocumentService.updateHeader(id, request);
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public InboundDocumentResponse updateStatus(@PathVariable Long id, @Valid @RequestBody InboundStatusUpdateRequest request) {
         return inboundDocumentService.updateStatus(id, request);
     }
 
     @PostMapping("/{id}/lines")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public ResponseEntity<InboundDocumentResponse> addLine(
             @PathVariable Long id,
             @Valid @RequestBody InboundLineCreateRequest request
@@ -92,7 +92,7 @@ public class InboundDocumentController {
     }
 
     @PutMapping("/{id}/lines/{lineId}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public InboundDocumentResponse updateLine(
             @PathVariable Long id,
             @PathVariable Long lineId,
@@ -102,14 +102,14 @@ public class InboundDocumentController {
     }
 
     @DeleteMapping("/{id}/lines/{lineId}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public ResponseEntity<Void> deleteLine(@PathVariable Long id, @PathVariable Long lineId) {
         inboundDocumentService.deleteLine(id, lineId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{documentId}/lines/{lineId}/post-receipt")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public ResponseEntity<ReceivingPostResponse> postReceipt(
             @PathVariable Long documentId,
             @PathVariable Long lineId,

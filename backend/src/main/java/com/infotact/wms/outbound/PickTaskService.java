@@ -2,8 +2,6 @@ package com.infotact.wms.outbound;
 
 import com.infotact.wms.error.ConflictException;
 import com.infotact.wms.error.ResourceNotFoundException;
-import com.infotact.wms.inventory.InventoryBalance;
-import com.infotact.wms.inventory.InventoryBalanceRepository;
 import com.infotact.wms.inventory.InventoryLedger;
 import com.infotact.wms.inventory.InventoryLedgerRepository;
 import com.infotact.wms.outbound.dto.PickTaskResponse;
@@ -18,13 +16,12 @@ import java.util.List;
 @Service
 public class PickTaskService {
 
-    public static final String LEDGER_REASON_OUTBOUND_PICK = "OUTBOUND_PICK";
+    public static final String LEDGER_REASON_OUTBOUND_PICK_CONFIRMED = "OUTBOUND_PICK_CONFIRMED";
     public static final String REF_TYPE_SALES_ORDER = "SALES_ORDER";
 
     private final PickTaskRepository pickTaskRepository;
     private final PickWaveRepository pickWaveRepository;
     private final SalesOrderRepository salesOrderRepository;
-    private final InventoryBalanceRepository inventoryBalanceRepository;
     private final InventoryLedgerRepository inventoryLedgerRepository;
     private final UserRepository userRepository;
     private final PickConfirmIdempotencyRepository pickConfirmIdempotencyRepository;
@@ -33,7 +30,6 @@ public class PickTaskService {
             PickTaskRepository pickTaskRepository,
             PickWaveRepository pickWaveRepository,
             SalesOrderRepository salesOrderRepository,
-            InventoryBalanceRepository inventoryBalanceRepository,
             InventoryLedgerRepository inventoryLedgerRepository,
             UserRepository userRepository,
             PickConfirmIdempotencyRepository pickConfirmIdempotencyRepository
@@ -41,7 +37,6 @@ public class PickTaskService {
         this.pickTaskRepository = pickTaskRepository;
         this.pickWaveRepository = pickWaveRepository;
         this.salesOrderRepository = salesOrderRepository;
-        this.inventoryBalanceRepository = inventoryBalanceRepository;
         this.inventoryLedgerRepository = inventoryLedgerRepository;
         this.userRepository = userRepository;
         this.pickConfirmIdempotencyRepository = pickConfirmIdempotencyRepository;
@@ -94,31 +89,13 @@ public class PickTaskService {
         SalesOrderLine line = task.getSalesOrderLine();
         SalesOrder order = line.getOrder();
 
-        InventoryBalance bal = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(
-                        task.getWarehouse().getId(),
-                        task.getBin().getId(),
-                        task.getItem().getId())
-                .orElseThrow(() -> new ConflictException("No inventory balance for pick location"));
-
-        if (bal.getOnHandQty().compareTo(qty) < 0) {
-            throw new ConflictException("Insufficient on-hand at bin for pick");
-        }
-        if (bal.getReservedQty().compareTo(qty) < 0) {
-            throw new ConflictException("Insufficient reserved at bin for pick");
-        }
-
-        bal.setOnHandQty(bal.getOnHandQty().subtract(qty));
-        bal.setReservedQty(bal.getReservedQty().subtract(qty));
-        inventoryBalanceRepository.save(bal);
-
         InventoryLedger ledger = new InventoryLedger();
         ledger.setWarehouse(task.getWarehouse());
         ledger.setActorUser(actor);
         ledger.setBin(task.getBin());
         ledger.setItem(task.getItem());
-        ledger.setQtyDelta(qty.negate());
-        ledger.setReason(LEDGER_REASON_OUTBOUND_PICK);
+        ledger.setQtyDelta(BigDecimal.ZERO); // decrement happens at PACK stage
+        ledger.setReason(LEDGER_REASON_OUTBOUND_PICK_CONFIRMED);
         ledger.setRefType(REF_TYPE_SALES_ORDER);
         ledger.setRefDocumentId(order.getId());
         ledger.setRefDocumentNumber(order.getOrderNumber());
@@ -139,23 +116,11 @@ public class PickTaskService {
         task.setStatus(PickTaskStatus.COMPLETED);
         pickTaskRepository.save(task);
 
-        refreshOrderStatus(order.getId());
         refreshWaveStatus(task.getWave().getId());
 
         PickTask saved = pickTaskRepository.findById(taskId).orElse(task);
         touch(saved);
         return OutboundMapper.toTaskResponse(saved);
-    }
-
-    private void refreshOrderStatus(Long orderId) {
-        SalesOrder order = salesOrderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Sales order not found: " + orderId));
-        boolean allPicked = order.getLines().stream().allMatch(l ->
-                l.getQuantityPicked().compareTo(l.getQuantityOrdered()) >= 0);
-        if (allPicked) {
-            order.setStatus(SalesOrderStatus.COMPLETED);
-            salesOrderRepository.save(order);
-        }
     }
 
     private void refreshWaveStatus(Long waveId) {

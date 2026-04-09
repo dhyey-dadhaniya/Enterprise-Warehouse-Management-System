@@ -93,7 +93,7 @@ public class InventoryOperationService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
 
         InventoryBalance balance = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), bin.getId(), item.getId())
+                .findForUpdate(warehouse.getId(), bin.getId(), item.getId())
                 .orElseGet(() -> newBalance(warehouse, bin, item));
 
         BigDecimal newOnHand = balance.getOnHandQty().add(delta);
@@ -187,7 +187,7 @@ public class InventoryOperationService {
         BigDecimal qty = request.quantity();
 
         InventoryBalance fromBalance = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), fromBin.getId(), item.getId())
+                .findForUpdate(warehouse.getId(), fromBin.getId(), item.getId())
                 .orElseThrow(() -> new ConflictException("No on-hand at source bin for this item"));
         if (fromBalance.getOnHandQty().compareTo(qty) < 0) {
             throw new ConflictException("Insufficient on-hand at source (have " + fromBalance.getOnHandQty() + ")");
@@ -201,7 +201,7 @@ public class InventoryOperationService {
         inventoryBalanceRepository.save(fromBalance);
 
         InventoryBalance toBalance = inventoryBalanceRepository
-                .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), toBin.getId(), item.getId())
+                .findForUpdate(warehouse.getId(), toBin.getId(), item.getId())
                 .orElseGet(() -> newBalance(warehouse, toBin, item));
         BigDecimal toAfter = toBalance.getOnHandQty().add(qty);
         toBalance.setOnHandQty(toAfter);

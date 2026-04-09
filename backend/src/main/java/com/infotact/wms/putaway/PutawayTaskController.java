@@ -59,32 +59,31 @@ public class PutawayTaskController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public ResponseEntity<PutawayTaskResponse> create(@Valid @RequestBody PutawayTaskCreateRequest request) {
         PutawayTaskResponse body = putawayTaskService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
     @PostMapping("/{id}/claim")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public PutawayTaskResponse claim(@PathVariable Long id, Authentication authentication) {
         return putawayTaskService.claim(id, authentication.getName());
     }
 
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','RECEIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
     public PutawayTaskResponse confirm(
             @PathVariable Long id,
             Authentication authentication,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody(required = false) @Valid PutawayConfirmRequest body
     ) {
-        boolean privileged = authentication.getAuthorities().stream().anyMatch(PutawayTaskController::isManagerOrAdmin);
+        boolean privileged = authentication.getAuthorities().stream().anyMatch(PutawayTaskController::isPrivilegedPutawayConfirm);
         return putawayTaskService.confirm(id, authentication.getName(), body, privileged, idempotencyKey);
     }
 
-    private static boolean isManagerOrAdmin(GrantedAuthority a) {
-        String r = a.getAuthority();
-        return "ROLE_ADMIN".equals(r) || "ROLE_MANAGER".equals(r);
+    private static boolean isPrivilegedPutawayConfirm(GrantedAuthority a) {
+        return "ROLE_ADMIN".equals(a.getAuthority());
     }
 }

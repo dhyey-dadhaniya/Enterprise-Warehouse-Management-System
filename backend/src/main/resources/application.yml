@@ -1,7 +1,9 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
-# Local PostgreSQL: run `docker compose -f backend/docker-compose.yml up -d` from repo root.
+# Local PostgreSQL: from repo root run:
+#   docker compose -f backend/docker-compose.yml up -d
+# Override DB and secrets with env vars (see backend/.env.example).
 
 spring:
   application:
@@ -15,9 +17,9 @@ spring:
         one-indexed-parameters: false
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/wms
-    username: wms
-    password: wms
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/wms}
+    username: ${SPRING_DATASOURCE_USERNAME:wms}
+    password: ${SPRING_DATASOURCE_PASSWORD:wms}
 
   jpa:
     hibernate:
@@ -39,5 +41,5 @@ management:
 app:
   jwt:
     secret: ${JWT_SECRET:wms-dev-jwt-secret-must-be-32bytes-min!!}
-    expiration-ms: 86400000
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
