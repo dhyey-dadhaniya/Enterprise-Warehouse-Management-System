@@ -1,5 +1,6 @@
 package com.infotact.wms.inventory;
 
+import com.infotact.wms.auth.User;
 import com.infotact.wms.master.Bin;
 import com.infotact.wms.master.Item;
 import com.infotact.wms.master.Warehouse;
@@ -36,6 +37,10 @@ public class InventoryLedger {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_user_id")
+    private User actorUser;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "bin_id", nullable = false)

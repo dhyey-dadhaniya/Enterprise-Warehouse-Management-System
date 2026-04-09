@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -136,6 +137,19 @@ public class GlobalExceptionHandler {
                 req.getRequestURI()
         );
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HEADER_REQUEST_ID, currentRequestId(req))
+                .body(body);
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    ResponseEntity<ApiError> handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                "Concurrent update detected, please retry",
+                req.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT)
                 .header(HEADER_REQUEST_ID, currentRequestId(req))
                 .body(body);
     }

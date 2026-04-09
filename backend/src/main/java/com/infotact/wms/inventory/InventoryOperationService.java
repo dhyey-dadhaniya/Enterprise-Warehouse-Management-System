@@ -1,5 +1,7 @@
 package com.infotact.wms.inventory;
 
+import com.infotact.wms.auth.User;
+import com.infotact.wms.auth.UserRepository;
 import com.infotact.wms.error.ConflictException;
 import com.infotact.wms.error.ResourceNotFoundException;
 import com.infotact.wms.inventory.dto.InventoryAdjustmentRequest;
@@ -31,23 +33,52 @@ public class InventoryOperationService {
     private final ItemRepository itemRepository;
     private final InventoryBalanceRepository inventoryBalanceRepository;
     private final InventoryLedgerRepository inventoryLedgerRepository;
+    private final UserRepository userRepository;
+    private final InventoryOpIdempotencyRepository inventoryOpIdempotencyRepository;
 
     public InventoryOperationService(
             WarehouseRepository warehouseRepository,
             BinRepository binRepository,
             ItemRepository itemRepository,
             InventoryBalanceRepository inventoryBalanceRepository,
-            InventoryLedgerRepository inventoryLedgerRepository
+            InventoryLedgerRepository inventoryLedgerRepository,
+            UserRepository userRepository,
+            InventoryOpIdempotencyRepository inventoryOpIdempotencyRepository
     ) {
         this.warehouseRepository = warehouseRepository;
         this.binRepository = binRepository;
         this.itemRepository = itemRepository;
         this.inventoryBalanceRepository = inventoryBalanceRepository;
         this.inventoryLedgerRepository = inventoryLedgerRepository;
+        this.userRepository = userRepository;
+        this.inventoryOpIdempotencyRepository = inventoryOpIdempotencyRepository;
     }
 
     @Transactional
-    public InventoryAdjustmentResponse adjust(InventoryAdjustmentRequest request) {
+    public InventoryAdjustmentResponse adjust(InventoryAdjustmentRequest request, String username, String rawIdempotencyKey) {
+        String idempotencyKey = com.infotact.wms.common.web.Idempotency.normalizeKey(rawIdempotencyKey);
+        if (idempotencyKey != null) {
+            var existing = inventoryOpIdempotencyRepository.findById(idempotencyKey);
+            if (existing.isPresent()) {
+                // Adjustment response is derived from current balance, so just proceed to read after no-op.
+                InventoryOpIdempotency idem = existing.get();
+                if (!"ADJUSTMENT".equals(idem.getOpType())) {
+                    throw new ConflictException("Idempotency-Key was already used for a different operation type");
+                }
+                // Return balance snapshot for this request's location/item
+                InventoryBalance bal = inventoryBalanceRepository
+                        .findByWarehouse_IdAndBin_IdAndItem_Id(request.warehouseId(), request.binId(), request.itemId())
+                        .orElseThrow(() -> new ConflictException("No inventory balance for requested location/item"));
+                BigDecimal available = bal.getOnHandQty().subtract(bal.getReservedQty());
+                return new InventoryAdjustmentResponse(
+                        idem.getInventoryLedgerId(),
+                        BigDecimal.ZERO,
+                        bal.getOnHandQty(),
+                        bal.getReservedQty(),
+                        available
+                );
+            }
+        }
         BigDecimal delta = request.quantityDelta();
         if (delta.compareTo(BigDecimal.ZERO) == 0) {
             throw new ConflictException("quantityDelta must not be zero");
@@ -58,6 +89,8 @@ public class InventoryOperationService {
         Bin bin = loadActiveBinInWarehouse(request.binId(), warehouse.getId());
         Item item = itemRepository.findById(request.itemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + request.itemId()));
+        User actor = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
 
         InventoryBalance balance = inventoryBalanceRepository
                 .findByWarehouse_IdAndBin_IdAndItem_Id(warehouse.getId(), bin.getId(), item.getId())
@@ -76,6 +109,7 @@ public class InventoryOperationService {
 
         InventoryLedger ledger = new InventoryLedger();
         ledger.setWarehouse(warehouse);
+        ledger.setActorUser(actor);
         ledger.setBin(bin);
         ledger.setItem(item);
         ledger.setQtyDelta(delta);
@@ -85,6 +119,14 @@ public class InventoryOperationService {
         ledger.setNote(buildNote(request.note(), request.reason()));
 
         InventoryLedger saved = inventoryLedgerRepository.save(ledger);
+
+        if (idempotencyKey != null) {
+            InventoryOpIdempotency idem = new InventoryOpIdempotency();
+            idem.setIdempotencyKey(idempotencyKey);
+            idem.setOpType("ADJUSTMENT");
+            idem.setInventoryLedgerId(saved.getId());
+            inventoryOpIdempotencyRepository.save(idem);
+        }
 
         BigDecimal available = newOnHand.subtract(balance.getReservedQty());
         return new InventoryAdjustmentResponse(
@@ -97,7 +139,38 @@ public class InventoryOperationService {
     }
 
     @Transactional
-    public InventoryTransferResponse transfer(InventoryTransferRequest request) {
+    public InventoryTransferResponse transfer(InventoryTransferRequest request, String username, String rawIdempotencyKey) {
+        String idempotencyKey = com.infotact.wms.common.web.Idempotency.normalizeKey(rawIdempotencyKey);
+        if (idempotencyKey != null) {
+            var existing = inventoryOpIdempotencyRepository.findById(idempotencyKey);
+            if (existing.isPresent()) {
+                InventoryOpIdempotency idem = existing.get();
+                if (!"TRANSFER".equals(idem.getOpType())) {
+                    throw new ConflictException("Idempotency-Key was already used for a different operation type");
+                }
+                // Return snapshot; we can't reconstruct both ledger ids with this table, but we can return ref + after qty from current balances.
+                InventoryBalance fromBal = inventoryBalanceRepository
+                        .findByWarehouse_IdAndBin_IdAndItem_Id(request.warehouseId(), request.fromBinId(), request.itemId())
+                        .orElseThrow(() -> new ConflictException("No inventory balance for from-bin"));
+                InventoryBalance toBal = inventoryBalanceRepository
+                        .findByWarehouse_IdAndBin_IdAndItem_Id(request.warehouseId(), request.toBinId(), request.itemId())
+                        .orElseGet(() -> {
+                            InventoryBalance b = newBalance(
+                                    warehouseRepository.findById(request.warehouseId()).orElseThrow(),
+                                    loadActiveBinInWarehouse(request.toBinId(), request.warehouseId()),
+                                    itemRepository.findById(request.itemId()).orElseThrow()
+                            );
+                            return inventoryBalanceRepository.save(b);
+                        });
+                return new InventoryTransferResponse(
+                        "TRF-REPLAY",
+                        idem.getInventoryLedgerId(),
+                        idem.getInventoryLedgerId(),
+                        fromBal.getOnHandQty(),
+                        toBal.getOnHandQty()
+                );
+            }
+        }
         if (request.fromBinId().equals(request.toBinId())) {
             throw new ConflictException("fromBinId and toBinId must differ");
         }
@@ -108,6 +181,8 @@ public class InventoryOperationService {
         Bin toBin = loadActiveBinInWarehouse(request.toBinId(), warehouse.getId());
         Item item = itemRepository.findById(request.itemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + request.itemId()));
+        User actor = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
 
         BigDecimal qty = request.quantity();
 
@@ -137,6 +212,7 @@ public class InventoryOperationService {
         String moveNote = buildTransferNote(request.note(), fromBin, toBin);
         InventoryLedger out = new InventoryLedger();
         out.setWarehouse(warehouse);
+        out.setActorUser(actor);
         out.setBin(fromBin);
         out.setItem(item);
         out.setQtyDelta(qty.negate());
@@ -148,6 +224,7 @@ public class InventoryOperationService {
 
         InventoryLedger in = new InventoryLedger();
         in.setWarehouse(warehouse);
+        in.setActorUser(actor);
         in.setBin(toBin);
         in.setItem(item);
         in.setQtyDelta(qty);
@@ -156,6 +233,14 @@ public class InventoryOperationService {
         in.setRefDocumentNumber(transferRef);
         in.setNote(moveNote);
         InventoryLedger savedIn = inventoryLedgerRepository.save(in);
+
+        if (idempotencyKey != null) {
+            InventoryOpIdempotency idem = new InventoryOpIdempotency();
+            idem.setIdempotencyKey(idempotencyKey);
+            idem.setOpType("TRANSFER");
+            idem.setInventoryLedgerId(savedOut.getId());
+            inventoryOpIdempotencyRepository.save(idem);
+        }
 
         return new InventoryTransferResponse(
                 transferRef,

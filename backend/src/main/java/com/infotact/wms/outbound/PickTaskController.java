@@ -3,9 +3,11 @@ package com.infotact.wms.outbound;
 import com.infotact.wms.outbound.dto.PickTaskResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,7 +38,11 @@ public class PickTaskController {
 
     @PostMapping("/{id}/confirm-pick")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','PICKER')")
-    public PickTaskResponse confirmPick(@PathVariable Long id) {
-        return pickTaskService.confirmPick(id);
+    public PickTaskResponse confirmPick(
+            @PathVariable Long id,
+            Authentication authentication,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        return pickTaskService.confirmPick(id, authentication.getName(), idempotencyKey);
     }
 }

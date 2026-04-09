@@ -44,6 +44,7 @@ public class PutawayTaskService {
     private final ItemRepository itemRepository;
     private final InventoryBalanceRepository inventoryBalanceRepository;
     private final InventoryLedgerRepository inventoryLedgerRepository;
+    private final PutawayConfirmIdempotencyRepository putawayConfirmIdempotencyRepository;
     private final InboundDocumentLineRepository inboundDocumentLineRepository;
     private final UserRepository userRepository;
 
@@ -55,6 +56,7 @@ public class PutawayTaskService {
             ItemRepository itemRepository,
             InventoryBalanceRepository inventoryBalanceRepository,
             InventoryLedgerRepository inventoryLedgerRepository,
+            PutawayConfirmIdempotencyRepository putawayConfirmIdempotencyRepository,
             InboundDocumentLineRepository inboundDocumentLineRepository,
             UserRepository userRepository
     ) {
@@ -65,6 +67,7 @@ public class PutawayTaskService {
         this.itemRepository = itemRepository;
         this.inventoryBalanceRepository = inventoryBalanceRepository;
         this.inventoryLedgerRepository = inventoryLedgerRepository;
+        this.putawayConfirmIdempotencyRepository = putawayConfirmIdempotencyRepository;
         this.inboundDocumentLineRepository = inboundDocumentLineRepository;
         this.userRepository = userRepository;
     }
@@ -170,9 +173,32 @@ public class PutawayTaskService {
     }
 
     @Transactional
-    public PutawayTaskResponse confirm(long taskId, String username, PutawayConfirmRequest request, boolean managerOrAdmin) {
+    public PutawayTaskResponse confirm(
+            long taskId,
+            String username,
+            PutawayConfirmRequest request,
+            boolean managerOrAdmin,
+            String rawIdempotencyKey
+    ) {
+        String idempotencyKey = com.infotact.wms.common.web.Idempotency.normalizeKey(rawIdempotencyKey);
+
         PutawayTask task = putawayTaskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Putaway task not found: " + taskId));
+
+        if (idempotencyKey != null) {
+            var existing = putawayConfirmIdempotencyRepository.findById(idempotencyKey);
+            if (existing.isPresent()) {
+                PutawayConfirmIdempotency idem = existing.get();
+                if (!idem.getTask().getId().equals(taskId)) {
+                    throw new ConflictException("Idempotency-Key was already used for a different putaway task");
+                }
+                // Return latest state
+                PutawayTask refreshed = putawayTaskRepository.findById(taskId).orElse(task);
+                touch(refreshed);
+                return PutawayMapper.toResponse(refreshed);
+            }
+        }
+
         if (task.getStatus() != PutawayTaskStatus.IN_PROGRESS) {
             throw new ConflictException("Putaway task must be IN_PROGRESS to confirm (current: " + task.getStatus() + ")");
         }
@@ -218,6 +244,7 @@ public class PutawayTaskService {
 
         InventoryLedger out = new InventoryLedger();
         out.setWarehouse(warehouse);
+        out.setActorUser(actor);
         out.setBin(fromBin);
         out.setItem(item);
         out.setQtyDelta(qty.negate());
@@ -226,10 +253,11 @@ public class PutawayTaskService {
         out.setRefDocumentId(task.getId());
         out.setRefDocumentNumber("PUTAWAY-" + task.getId());
         out.setNote(refNote);
-        inventoryLedgerRepository.save(out);
+        InventoryLedger savedOut = inventoryLedgerRepository.save(out);
 
         InventoryLedger in = new InventoryLedger();
         in.setWarehouse(warehouse);
+        in.setActorUser(actor);
         in.setBin(toBin);
         in.setItem(item);
         in.setQtyDelta(qty);
@@ -238,7 +266,17 @@ public class PutawayTaskService {
         in.setRefDocumentId(task.getId());
         in.setRefDocumentNumber("PUTAWAY-" + task.getId());
         in.setNote(refNote);
-        inventoryLedgerRepository.save(in);
+        InventoryLedger savedIn = inventoryLedgerRepository.save(in);
+
+        if (idempotencyKey != null) {
+            PutawayConfirmIdempotency idem = new PutawayConfirmIdempotency();
+            idem.setIdempotencyKey(idempotencyKey);
+            idem.setTask(task);
+            idem.setConfirmedToBin(toBin);
+            idem.setInventoryLedgerOutId(savedOut.getId());
+            idem.setInventoryLedgerInId(savedIn.getId());
+            putawayConfirmIdempotencyRepository.save(idem);
+        }
 
         task.setConfirmedToBin(toBin);
         task.setStatus(PutawayTaskStatus.COMPLETED);
