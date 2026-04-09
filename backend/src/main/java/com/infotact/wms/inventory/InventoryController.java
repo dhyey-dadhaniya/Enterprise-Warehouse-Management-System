@@ -1,13 +1,22 @@
 package com.infotact.wms.inventory;
 
 import com.infotact.wms.common.dto.PageResponse;
+import com.infotact.wms.inventory.dto.InventoryAdjustmentRequest;
+import com.infotact.wms.inventory.dto.InventoryAdjustmentResponse;
 import com.infotact.wms.inventory.dto.InventoryBalanceResponse;
+import com.infotact.wms.inventory.dto.InventoryTransferRequest;
+import com.infotact.wms.inventory.dto.InventoryTransferResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,9 +30,14 @@ import java.math.BigDecimal;
 public class InventoryController {
 
     private final InventoryBalanceService inventoryBalanceService;
+    private final InventoryOperationService inventoryOperationService;
 
-    public InventoryController(InventoryBalanceService inventoryBalanceService) {
+    public InventoryController(
+            InventoryBalanceService inventoryBalanceService,
+            InventoryOperationService inventoryOperationService
+    ) {
         this.inventoryBalanceService = inventoryBalanceService;
+        this.inventoryOperationService = inventoryOperationService;
     }
 
     /**
@@ -56,5 +70,23 @@ public class InventoryController {
             @PageableDefault(size = 50, sort = "onHandQty", direction = Sort.Direction.ASC) Pageable pageable
     ) {
         return inventoryBalanceService.lowStock(warehouseId, maxAvailable, pageable);
+    }
+
+    /**
+     * Cycle count / damage / correction / quarantine reclass: single-bin quantity change with ledger line.
+     */
+    @PostMapping("/adjustments")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<InventoryAdjustmentResponse> adjust(@Valid @RequestBody InventoryAdjustmentRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(inventoryOperationService.adjust(request));
+    }
+
+    /**
+     * Move quantity between bins (same warehouse); paired TRANSFER_OUT / TRANSFER_IN ledger lines.
+     */
+    @PostMapping("/transfers")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<InventoryTransferResponse> transfer(@Valid @RequestBody InventoryTransferRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(inventoryOperationService.transfer(request));
     }
 }
