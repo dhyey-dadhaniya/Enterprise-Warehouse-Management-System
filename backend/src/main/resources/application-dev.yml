@@ -1,0 +1,8 @@
+# Optional profile: use when you want explicit local dev.
+# Run: mvn spring-boot:run -Dspring-boot.run.profiles=dev
+# Or: ./scripts/run-with-env.sh dev   (loads backend/.env)
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/wms}
+    username: ${SPRING_DATASOURCE_USERNAME:wms}
+    password: ${SPRING_DATASOURCE_PASSWORD:wms}
