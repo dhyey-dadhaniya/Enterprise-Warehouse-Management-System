@@ -4,9 +4,12 @@ import com.infotact.wms.error.ConflictException;
 import com.infotact.wms.error.ResourceNotFoundException;
 import com.infotact.wms.inventory.InventoryLedger;
 import com.infotact.wms.inventory.InventoryLedgerRepository;
+import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.outbound.dto.PickTaskResponse;
 import com.infotact.wms.auth.User;
 import com.infotact.wms.auth.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,6 +61,21 @@ public class PickTaskService {
                     return OutboundMapper.toTaskResponse(t);
                 })
                 .toList();
+    }
+
+    /**
+     * Paginated tasks by status (default {@link PickTaskStatus#PENDING} for operator queue).
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<PickTaskResponse> pageByStatus(PickTaskStatus status, Long warehouseId, Pageable pageable) {
+        PickTaskStatus st = status != null ? status : PickTaskStatus.PENDING;
+        Page<PickTask> page = warehouseId != null
+                ? pickTaskRepository.findByStatusAndWarehouse_Id(st, warehouseId, pageable)
+                : pickTaskRepository.findByStatus(st, pageable);
+        return PageResponse.of(page.map(t -> {
+            touch(t);
+            return OutboundMapper.toTaskResponse(t);
+        }));
     }
 
     @Transactional
