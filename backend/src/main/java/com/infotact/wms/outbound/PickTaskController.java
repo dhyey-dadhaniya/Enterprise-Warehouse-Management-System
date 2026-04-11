@@ -1,7 +1,11 @@
 package com.infotact.wms.outbound;
 
+import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.outbound.dto.PickTaskResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,9 +35,22 @@ public class PickTaskController {
         return pickTaskService.get(id);
     }
 
-    @GetMapping
+    /** Tasks for a wave (route order). */
+    @GetMapping(params = "waveId")
     public List<PickTaskResponse> listByWave(@RequestParam Long waveId) {
         return pickTaskService.listByWave(waveId);
+    }
+
+    /**
+     * Paginated task queue (omit {@code waveId}). Defaults to {@link PickTaskStatus#PENDING}.
+     */
+    @GetMapping(params = "!waveId")
+    public PageResponse<PickTaskResponse> listQueue(
+            @RequestParam(required = false) PickTaskStatus status,
+            @RequestParam(required = false) Long warehouseId,
+            @PageableDefault(size = 50, sort = "routeSequence", direction = Sort.Direction.ASC) Pageable pageable
+    ) {
+        return pickTaskService.pageByStatus(status, warehouseId, pageable);
     }
 
     @PostMapping("/{id}/confirm-pick")
