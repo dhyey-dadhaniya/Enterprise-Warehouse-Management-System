@@ -2,7 +2,12 @@
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        // tiny theme tweak: slightly different brand shade
+        brand: '#14B8A6',
+      },
+    },
   },
   plugins: [],
 }
