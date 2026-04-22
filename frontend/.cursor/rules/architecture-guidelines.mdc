@@ -1,0 +1,50 @@
+---
+description: High-level architecture — API, types, schemas, auth, screens; apply to every task
+alwaysApply: true
+---
+
+# Architecture Guidelines (SHM)
+
+Apply these guidelines on **every** task that touches API, new screens, or app structure.
+
+## 1. API layer
+
+- **Single HTTP client:** `src/api/client.ts` (Axios instance with auth and error handling).
+- **Endpoints:** `src/api/endpoints.ts` contains **only path constants** (e.g. `API_ENDPOINTS.AUTH.LOGIN`, `API_ENDPOINTS.TEN_GURUS_CONTENT(guruId)`). No request functions.
+- **All requests** go through **`useAPI`** (`src/hooks/useApi.ts`). Components and page hooks do not call `apiClient` directly; they use `useAPI` or a feature hook that uses `useAPI`.
+- **No TanStack Query** anywhere; no `QueryClient`, `useQuery`, or `useMutation`.
+
+## 2. Types and schemas
+
+- **Shared types:** `src/types/` (e.g. `guru.types.ts`, `auth.types.ts`, `api.types.ts`). Use `@/types` or `@/types/...`.
+- **Validation:** Zod (or project schema pattern) in `src/schemas/`; reuse in forms and API payloads where applicable.
+- **No `any`** for API or form data; use proper interfaces/types.
+
+## 3. Auth
+
+- **Token and logout:** `src/utils/auth-utils.ts` (get/set/clear token, `logout()`, `extractTokenFromLoginResponse()`).
+- **Auth state:** `src/contexts/auth-context.tsx`; uses `apiClient` for “me” and auth-utils for logout. Login uses `useAPI` with `onSuccess` to set token and navigate.
+- **Protected routes:** Use the existing pattern (e.g. `ProtectedRoute`) and do not duplicate auth checks in components.
+
+## 4. Screen (page) architecture
+
+- **Thin pages:** `src/pages/*.tsx` only compose a **page hook** and **feature components**. No large state or JSX in the page file.
+- **Page hook:** One per screen (e.g. `useTimelinePage.ts`, `useGoldenTemplePage.ts`) under `src/hooks/<feature>/`. Holds all state and handlers for that screen.
+- **Feature components:** Under `src/components/features/<feature>/` (e.g. header, table, form, dialog). Kebab-case files; barrel `index.ts` for public exports.
+- **Details:** See **screen-architecture.mdc** for creating or modifying screens.
+
+## 5. Naming and structure
+
+- **Files:** kebab-case (see **naming-conventions.mdc**). Folders: lowercase-kebab-case; exception `App/`.
+- **Imports:** Use `@/` alias only; no deep relative paths.
+- **Single responsibility:** One component = one concern; one hook = one state/effect area; one util = one transformation.
+
+## 6. What not to do
+
+- Do **not** add request logic or URLs in `endpoints.ts`; only path constants.
+- Do **not** use TanStack Query or add `QueryClientProvider` / `queryClient`.
+- Do **not** put API calls or large state in page components; use the page hook and `useAPI`/feature hooks.
+- Do **not** create `src/services/`, `src/config/api.ts`, or `config/queryClient.ts`; use `src/api/` and `useAPI` instead.
+- Do **not** duplicate validation or form logic; use shared schemas and a single form state in the hook.
+
+When in doubt, match the existing patterns in **Timeline**, **Golden Temple**, and **Ten Gurus** (thin page + page hook + feature components + `useAPI`/feature hooks).
