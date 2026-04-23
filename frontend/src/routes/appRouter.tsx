@@ -8,8 +8,18 @@ import { ReceivingPutawayPage } from '../pages/receiving/ReceivingPutawayPage'
 import { OrdersPage } from '../pages/orders/OrdersPage'
 import { PickingPage } from '../pages/picking/PickingPage'
 import { BarcodeSimPage } from '../pages/barcode/BarcodeSimPage'
+import { AuthLayout } from '../pages/auth/AuthLayout'
+import { LoginPage } from '../pages/auth/LoginPage'
+import { RegisterPage } from '../pages/auth/RegisterPage'
 
 export const appRouter = createBrowserRouter([
+  {
+    element: <AuthLayout />,
+    children: [
+      { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
+    ],
+  },
   {
     path: '/',
     element: <AppShellLayout />,
@@ -17,7 +27,7 @@ export const appRouter = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
       {
-        element: <ProtectedRole allow={['ADMIN']} />,
+        element: <ProtectedRole allow={['ADMIN', 'MANAGER']} />,
         children: [
           { path: 'inventory', element: <InventoryPage /> },
           { path: 'warehouse-structure', element: <WarehouseStructurePage /> },
@@ -26,11 +36,11 @@ export const appRouter = createBrowserRouter([
         ],
       },
       {
-        element: <ProtectedRole allow={['OPERATOR']} />,
+        element: <ProtectedRole allow={['OPERATOR', 'PICKER']} />,
         children: [{ path: 'picking', element: <PickingPage /> }],
       },
       {
-        element: <ProtectedRole allow={['ADMIN', 'OPERATOR']} />,
+        element: <ProtectedRole allow={['ADMIN', 'OPERATOR', 'MANAGER', 'RECEIVER', 'PICKER']} />,
         children: [{ path: 'barcode', element: <BarcodeSimPage /> }],
       },
       { path: '*', element: <Navigate to="/dashboard" replace /> },

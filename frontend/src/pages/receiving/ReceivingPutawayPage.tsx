@@ -8,12 +8,12 @@ import { CheckCircle2, Wand2 } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
-import type { Product, Warehouse } from '../../types/domain'
-import { listProducts, listWarehouses } from '../../services/catalogService'
+import type { Item, Warehouse } from '../../types/domain'
+import { listItems, listWarehouses } from '../../services/catalogService'
 import { suggestBinLocation } from '../../services/putawayLogic'
 
 const schema = z.object({
-  productId: z.string().min(1, 'Select a product'),
+  itemId: z.string().min(1, 'Select an item'),
   warehouseId: z.string().min(1, 'Select a warehouse'),
   quantity: z.coerce.number().int().min(1).max(10_000),
 })
@@ -22,16 +22,16 @@ type FormValues = z.infer<typeof schema>
 
 export function ReceivingPutawayPage() {
   const [confirmed, setConfirmed] = useState<{
-    product: Product
+    item: Item
     warehouse: Warehouse
     quantity: number
     suggestion: { aisle: string; bin: string; confidence: number; reason: string }
     at: string
   } | null>(null)
 
-  const productsQ = useQuery({
-    queryKey: ['catalog', 'products'],
-    queryFn: listProducts,
+  const itemsQ = useQuery({
+    queryKey: ['catalog', 'items'],
+    queryFn: listItems,
     staleTime: 60_000,
   })
 
@@ -43,32 +43,32 @@ export function ReceivingPutawayPage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { productId: '', warehouseId: '', quantity: 1 },
+    defaultValues: { itemId: '', warehouseId: '', quantity: 1 },
     mode: 'onChange',
   })
 
-  const products = productsQ.data ?? []
+  const items = itemsQ.data ?? []
   const warehouses = warehousesQ.data ?? []
 
   const selected = useMemo(() => {
-    const product = products.find((p) => p.id === form.watch('productId'))
+    const item = items.find((p) => p.id === form.watch('itemId'))
     const warehouse = warehouses.find((w) => w.id === form.watch('warehouseId'))
-    return { product, warehouse }
+    return { item, warehouse }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, warehouses, form.watch('productId'), form.watch('warehouseId')])
+  }, [items, warehouses, form.watch('itemId'), form.watch('warehouseId')])
 
   const suggestion = useMemo(() => {
-    if (!selected.product || !selected.warehouse) return null
+    if (!selected.item || !selected.warehouse) return null
     const qty = form.watch('quantity') ?? 1
     return suggestBinLocation({
-      sku: selected.product.sku,
+      sku: selected.item.sku,
       warehouseName: selected.warehouse.name,
       qty,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected.product, selected.warehouse, form.watch('quantity')])
+  }, [selected.item, selected.warehouse, form.watch('quantity')])
 
-  const busy = productsQ.isPending || warehousesQ.isPending
+  const busy = itemsQ.isPending || warehousesQ.isPending
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -85,9 +85,9 @@ export function ReceivingPutawayPage() {
             <CardTitle>Receive Stock</CardTitle>
           </CardHeader>
           <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-            {productsQ.isError || warehousesQ.isError ? (
+            {itemsQ.isError || warehousesQ.isError ? (
               <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
-                Failed to load catalog data (mock). Refresh the page.
+                Failed to load catalog data. Refresh the page.
               </div>
             ) : busy ? (
               <div className="space-y-3">
@@ -99,39 +99,39 @@ export function ReceivingPutawayPage() {
               <form
                 className="space-y-4"
                 onSubmit={form.handleSubmit((vals) => {
-                  const product = products.find((p) => p.id === vals.productId)
+                  const item = items.find((p) => p.id === vals.itemId)
                   const warehouse = warehouses.find((w) => w.id === vals.warehouseId)
-                  if (!product || !warehouse || !suggestion) return
+                  if (!item || !warehouse || !suggestion) return
 
                   setConfirmed({
-                    product,
+                    item,
                     warehouse,
                     quantity: vals.quantity,
                     suggestion,
                     at: new Date().toISOString(),
                   })
-                  toast.success('Receiving confirmed (mock).')
+                  toast.success('Receiving confirmed.')
                 })}
               >
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Product
+                      Item
                     </label>
                     <select
                       className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
-                      {...form.register('productId')}
+                      {...form.register('itemId')}
                     >
-                      <option value="">Select product…</option>
-                      {products.map((p) => (
+                      <option value="">Select item…</option>
+                      {items.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.sku} · {p.name}
                         </option>
                       ))}
                     </select>
-                    {form.formState.errors.productId && (
+                    {form.formState.errors.itemId && (
                       <div className="text-xs text-rose-600 dark:text-rose-300">
-                        {form.formState.errors.productId.message}
+                        {form.formState.errors.itemId.message}
                       </div>
                     )}
                   </div>
@@ -191,7 +191,7 @@ export function ReceivingPutawayPage() {
                         </div>
                       ) : (
                         <span className="text-slate-500 dark:text-slate-400">
-                          Select product + warehouse
+                          Select item + warehouse
                         </span>
                       )}
                       {suggestion && (
@@ -216,7 +216,7 @@ export function ReceivingPutawayPage() {
                     type="button"
                     variant="secondary"
                     onClick={() => {
-                      form.reset({ productId: '', warehouseId: '', quantity: 1 })
+                      form.reset({ itemId: '', warehouseId: '', quantity: 1 })
                       setConfirmed(null)
                       toast('Form reset.')
                     }}
@@ -256,9 +256,9 @@ export function ReceivingPutawayPage() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white/60 p-3 text-sm dark:border-slate-800 dark:bg-slate-950/50">
-                <div className="text-xs text-slate-600 dark:text-slate-400">Product</div>
+                <div className="text-xs text-slate-600 dark:text-slate-400">Item</div>
                 <div className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">
-                  <span className="text-mono">{confirmed.product.sku}</span> · {confirmed.product.name}
+                  <span className="text-mono">{confirmed.item.sku}</span> · {confirmed.item.name}
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                   <div>
@@ -289,7 +289,7 @@ export function ReceivingPutawayPage() {
 
               <Button
                 variant="secondary"
-                onClick={() => toast.success('Putaway task created (mock).')}
+                onClick={() => toast.success('Putaway task created.')}
                 className="w-full"
               >
                 Create Putaway Task

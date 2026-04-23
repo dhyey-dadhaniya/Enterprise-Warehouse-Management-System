@@ -2,24 +2,18 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ArrowRight, RefreshCcw, Search } from 'lucide-react'
-import type { Order, OrderStatus } from '../../types/domain'
+import type { SalesOrder, SalesOrderStatus } from '../../types/domain'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Table, TBody, TD, TH, THead, TR } from '../../components/ui/Table'
 import { cn } from '../../lib/cn'
-import { getNextStatus, listOrders, updateOrderStatus } from '../../services/ordersService'
+import { advanceOrder, getNextStatus, listOrders } from '../../services/ordersService'
 
-function statusVariant(status: OrderStatus) {
+function statusVariant(status: SalesOrderStatus) {
   if (status === 'SHIPPED') return 'success'
   if (status === 'PACKED') return 'info'
   if (status === 'PICKING') return 'warning'
-  return 'neutral'
-}
-
-function priorityVariant(p: Order['priority']) {
-  if (p === 'HIGH') return 'danger'
-  if (p === 'MEDIUM') return 'warning'
   return 'neutral'
 }
 
@@ -31,7 +25,7 @@ function formatWhen(iso: string) {
 export function OrdersPage() {
   const qc = useQueryClient()
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState<OrderStatus | ''>('')
+  const [status, setStatus] = useState<SalesOrderStatus | ''>('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -44,27 +38,27 @@ export function OrdersPage() {
   })
 
   const mutation = useMutation({
-    mutationFn: updateOrderStatus,
-    onMutate: async (vars) => {
+    mutationFn: advanceOrder,
+    onMutate: async (vars: { id: string; currentStatus: SalesOrderStatus }) => {
       await qc.cancelQueries({ queryKey: ['orders'] })
       const prev = qc.getQueriesData({ queryKey: ['orders'] })
 
       for (const [k, v] of prev) {
-        const typed = v as { items: Order[]; total: number } | undefined
+        const typed = v as { items: SalesOrder[]; total: number } | undefined
         if (!typed) continue
         qc.setQueryData(k, {
           ...typed,
-          items: typed.items.map((o) => (o.id === vars.id ? { ...o, status: vars.status } : o)),
+          items: typed.items,
         })
       }
 
       return { prev }
     },
     onError: () => {
-      toast.error('Failed to update status (mock).')
+      toast.error('Failed to advance order.')
     },
-    onSuccess: (updated) => {
-      toast.success(`Order ${updated.number} → ${updated.status}`)
+    onSuccess: (updated: SalesOrder) => {
+      toast.success(`Order ${updated.orderNumber} → ${updated.status}`)
     },
     onSettled: async () => {
       await qc.invalidateQueries({ queryKey: ['orders'] })
@@ -117,7 +111,7 @@ export function OrdersPage() {
             <select
               value={status}
               onChange={(e) => {
-                setStatus(e.target.value as OrderStatus | '')
+                setStatus(e.target.value as SalesOrderStatus | '')
                 setPage(1)
               }}
               className="h-10 rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:ring-amber-400/20"
@@ -127,6 +121,7 @@ export function OrdersPage() {
               <option value="PICKING">PICKING</option>
               <option value="PACKED">PACKED</option>
               <option value="SHIPPED">SHIPPED</option>
+              <option value="CANCELLED">CANCELLED</option>
             </select>
 
             <select
@@ -168,7 +163,6 @@ export function OrdersPage() {
                   <TH>Order</TH>
                   <TH>Created</TH>
                   <TH>Status</TH>
-                  <TH>Priority</TH>
                   <TH>Lines</TH>
                   <TH className="text-right">Action</TH>
                 </tr>
@@ -180,10 +174,10 @@ export function OrdersPage() {
                     <TR key={o.id}>
                       <TD className="whitespace-nowrap">
                         <div className="text-mono font-semibold text-slate-900 dark:text-slate-100">
-                          {o.number}
+                          {o.orderNumber}
                         </div>
                         <div className="text-xs text-slate-600 dark:text-slate-400">
-                          {o.lines[0]?.sku} · {o.lines[0]?.bin}
+                          {o.lines[0]?.sku}
                           {o.lines.length > 1 ? ` +${o.lines.length - 1}` : ''}
                         </div>
                       </TD>
@@ -195,13 +189,10 @@ export function OrdersPage() {
                           {o.status}
                         </Badge>
                       </TD>
-                      <TD>
-                        <Badge variant={priorityVariant(o.priority)} className="text-mono">
-                          {o.priority}
-                        </Badge>
-                      </TD>
                       <TD className="text-slate-700 dark:text-slate-200">
-                        <span className="text-mono">{o.lines.reduce((a, l) => a + l.qty, 0)}</span>{' '}
+                        <span className="text-mono">
+                          {o.lines.reduce((a, l) => a + (Number(l.quantityOrdered) || 0), 0)}
+                        </span>{' '}
                         <span className="text-xs text-slate-500 dark:text-slate-400">
                           items
                         </span>
@@ -210,7 +201,7 @@ export function OrdersPage() {
                         {next ? (
                           <Button
                             size="sm"
-                            onClick={() => mutation.mutate({ id: o.id, status: next })}
+                            onClick={() => mutation.mutate({ id: o.id, currentStatus: o.status })}
                             disabled={mutation.isPending}
                           >
                             Advance

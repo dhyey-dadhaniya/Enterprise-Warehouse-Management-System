@@ -1,12 +1,15 @@
 import { Bell, Menu, Moon, Search, Sun } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useUiStore } from '../../store/uiStore'
 import { Button } from '../ui/Button'
 
 export function TopNav() {
-  const { role, userName, setRole } = useAuthStore()
+  const navigate = useNavigate()
+  const { accessToken, username, roles, clearSession } = useAuthStore()
   const { darkMode, toggleDarkMode, openMobileSidebar } = useUiStore()
+  const signedIn = Boolean(accessToken)
 
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/60 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/45">
@@ -32,17 +35,23 @@ export function TopNav() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              const next = role === 'ADMIN' ? 'OPERATOR' : 'ADMIN'
-              setRole(next)
-              toast.success(`Switched role to ${next}`)
-            }}
-          >
-            Role: {role}
-          </Button>
+          {signedIn ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                clearSession()
+                toast.success('Logged out')
+                navigate('/login')
+              }}
+            >
+              Logout
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => navigate('/login')}>
+              Login
+            </Button>
+          )}
 
           <Button
             variant="ghost"
@@ -65,15 +74,15 @@ export function TopNav() {
           <div className="hidden items-center gap-3 pl-2 md:flex">
             <div className="text-right">
               <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {userName}
+                {username ?? '—'}
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                FulfillOps · WMS
+                {roles.length ? roles.join(', ') : '—'}
               </div>
             </div>
             <div className="relative grid size-10 place-items-center overflow-hidden rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-900 shadow-soft dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-amber-400/20 via-transparent to-sky-400/20" />
-              {userName
+              {(username ?? '')
                 .split(' ')
                 .slice(0, 2)
                 .map((s) => s[0]?.toUpperCase())

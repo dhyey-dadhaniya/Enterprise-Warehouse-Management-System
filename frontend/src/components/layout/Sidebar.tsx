@@ -25,13 +25,13 @@ type NavItem = {
 }
 
 const navItems: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'OPERATOR'] },
-  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN'] },
-  { to: '/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN'] },
-  { to: '/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN'] },
-  { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN'] },
-  { to: '/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR'] },
-  { to: '/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'OPERATOR'] },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
+  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN', 'MANAGER', 'RECEIVER'] },
+  { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR', 'PICKER'] },
+  { to: '/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
 ]
 
 export function Sidebar() {
@@ -55,10 +55,11 @@ export function SidebarContent({
   onNavigate?: () => void
   forceExpanded?: boolean
 }) {
-  const role = useAuthStore((s) => s.role)
+  const roles = useAuthStore((s) => s.roles)
   const collapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const isCollapsed = forceExpanded ? false : collapsed
+  const primaryRole: UserRole | null = roles[0] ?? null
 
   return (
     <div className="flex h-full flex-col">
@@ -75,7 +76,7 @@ export function SidebarContent({
                   Fulfill<span className="hazard-underline">Ops</span>
                 </div>
                 <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {role === 'ADMIN' ? 'Manager Console' : 'Operator Console'}
+                  {primaryRole ? `${primaryRole} Console` : 'Not signed in'}
                 </div>
               </div>
             )}
@@ -97,7 +98,7 @@ export function SidebarContent({
 
       <nav className="flex-1 space-y-1 px-2">
         {navItems
-          .filter((i) => i.roles.includes(role))
+          .filter((i) => i.roles.some((r) => roles.includes(r)))
           .map((item) => {
             const Icon = item.icon
             return (
@@ -132,16 +133,13 @@ export function SidebarContent({
         <div className="rounded-xl border border-slate-200 bg-white/70 p-3 text-xs text-slate-600 shadow-soft dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
           {!isCollapsed ? (
             <>
-              <div className="font-semibold text-slate-900 dark:text-slate-100">Role</div>
+              <div className="font-semibold text-slate-900 dark:text-slate-100">Roles</div>
               <div className="mt-1 flex items-center justify-between gap-3">
-                <span className="text-mono">{role}</span>
-                <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                  LIVE MOCK
-                </span>
+                <span className="text-mono">{roles.length ? roles.join(', ') : '—'}</span>
               </div>
             </>
           ) : (
-            <div className="text-center font-semibold">Demo</div>
+            <div className="text-center font-semibold">WMS</div>
           )}
         </div>
       </div>
