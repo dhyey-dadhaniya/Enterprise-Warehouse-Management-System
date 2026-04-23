@@ -1,0 +1,47 @@
+---
+description: Enforce folder paths and structure for this project
+globs: ['src/**/*']
+alwaysApply: true
+---
+
+# Folder Structure (SHM)
+
+Only create folders and files that fit this project’s structure.
+
+## Allowed top-level under `src/`
+
+```text
+App/           # Root app and router (App/index.tsx)
+api/           # API client and endpoint constants (client.ts, endpoints.ts, index.ts)
+components/    # UI components (ui/, layout/, features/)
+contexts/      # React contexts (e.g. auth-context.tsx)
+constants/     # App-wide constants (e.g. routes, config values)
+hooks/         # Custom hooks (useApi.ts, feature hooks, feature/use*-page.ts)
+pages/         # Thin page components only
+schemas/       # Zod (and similar) validation schemas
+styles/        # Global CSS
+types/         # Shared TypeScript types and interfaces
+utils/         # Pure helpers and auth utilities (e.g. auth-utils.ts)
+```
+
+## Under `components/`
+
+- **`ui/`** – Shadcn primitives only; kebab-case files (e.g. `button.tsx`, `card.tsx`).
+- **`layout/`** – Layout pieces (sidebar, header, etc.).
+- **`features/`** – One folder per feature (e.g. `timeline/`, `golden-temple/`, `ten-gurus/`). Each has feature-specific components and an `index.ts` barrel that re-exports public components.
+
+## Under `hooks/`
+
+- **Root** – Shared hooks: `useApi.ts`, `useToast.ts`, feature data hooks (e.g. `useSikhApps.ts`, `useTimeline.ts`).
+- **Feature folders** – One folder per screen/feature when the hook is large or screen-specific: `hooks/timeline/useTimelinePage.ts`, `hooks/golden-temple/useGoldenTemplePage.ts`, `hooks/ten-gurus/useTenGurusPage.ts`.
+
+## Do not create
+
+- `src/common/`, `src/helpers/`, `src/lib/`, `src/services/` → use `utils/` or `api/` as appropriate.
+- `src/ui/` at top level → use `src/components/ui/`.
+- `src/config/` for API client → use `src/api/`.
+- `config/queryClient.ts` or TanStack Query setup → this project uses `useAPI` only.
+
+## Path alias
+
+- Use **`@/`** for `src/` (e.g. `@/api`, `@/components/features/timeline`, `@/hooks/useApi`, `@/types`). No deep relative paths like `../../../components`.
