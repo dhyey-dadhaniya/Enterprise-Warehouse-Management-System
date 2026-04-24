@@ -60,6 +60,24 @@ export async function advanceOrder(input: { id: string; currentStatus: SalesOrde
   return await api.get<SalesOrder>(`/sales-orders/${input.id}`).then((r) => r.data)
 }
 
+export async function createSalesOrder(input: {
+  orderNumber?: string
+  warehouseId: number
+  lines: Array<{ itemId: number; quantityOrdered: number }>
+}): Promise<SalesOrder> {
+  const res = await api.post<SalesOrder>('/sales-orders', {
+    orderNumber: input.orderNumber?.trim() || undefined,
+    warehouseId: input.warehouseId,
+    lines: input.lines.map((l) => ({ itemId: l.itemId, quantityOrdered: l.quantityOrdered })),
+  })
+  return res.data
+}
+
+export async function cancelSalesOrder(id: string): Promise<SalesOrder> {
+  const res = await api.patch<SalesOrder>(`/sales-orders/${id}/cancel`)
+  return res.data
+}
+
 export function getNextStatus(current: SalesOrderStatus): SalesOrderStatus | null {
   if (current === 'PENDING') return 'PICKING'
   if (current === 'PICKING') return 'PACKED'

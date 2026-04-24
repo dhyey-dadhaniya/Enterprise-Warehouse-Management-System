@@ -27,6 +27,37 @@ export interface WarehouseNode {
   children?: WarehouseNode[]
 }
 
+export interface Zone {
+  id: ID
+  warehouseId: ID
+  code: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Aisle {
+  id: ID
+  zoneId: ID
+  warehouseId: ID
+  code: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Bin {
+  id: ID
+  zoneId: ID
+  warehouseId: ID
+  aisleId: ID | null
+  code: string
+  description: string | null
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export type OrderStatus = 'PENDING' | 'PICKING' | 'PACKED' | 'SHIPPED'
 
 export interface SalesOrderLine {

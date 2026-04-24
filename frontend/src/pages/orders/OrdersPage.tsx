@@ -1,14 +1,28 @@
 import { useMemo, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowRight, RefreshCcw, Search } from 'lucide-react'
+import { ArrowRight, Plus, RefreshCcw, Search, X } from 'lucide-react'
 import type { SalesOrder, SalesOrderStatus } from '../../types/domain'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Table, TBody, TD, TH, THead, TR } from '../../components/ui/Table'
 import { cn } from '../../lib/cn'
-import { advanceOrder, getNextStatus, listOrders } from '../../services/ordersService'
+import { useAuthStore } from '../../store/authStore'
+import { listItems, listWarehouses } from '../../services/catalogService'
+import { advanceOrder, cancelSalesOrder, createSalesOrder, getNextStatus, listOrders } from '../../services/ordersService'
+
+const createSchema = z.object({
+  orderNumber: z.string().max(64).optional(),
+  warehouseId: z.coerce.number().int().positive(),
+  itemId: z.coerce.number().int().positive(),
+  quantityOrdered: z.coerce.number().positive(),
+})
+
+type CreateForm = z.infer<typeof createSchema>
 
 function statusVariant(status: SalesOrderStatus) {
   if (status === 'SHIPPED') return 'success'
@@ -24,10 +38,13 @@ function formatWhen(iso: string) {
 
 export function OrdersPage() {
   const qc = useQueryClient()
+  const roles = useAuthStore((s) => s.roles)
+  const isAdmin = roles.includes('ADMIN')
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<SalesOrderStatus | ''>('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const key = useMemo(() => ['orders', { query, status, page, pageSize }] as const, [query, status, page, pageSize])
 
@@ -35,6 +52,41 @@ export function OrdersPage() {
     queryKey: key,
     queryFn: () => listOrders({ query, status, page, pageSize }),
     staleTime: 5_000,
+  })
+
+  const warehousesQ = useQuery({
+    queryKey: ['catalog', 'warehouses'],
+    queryFn: listWarehouses,
+    staleTime: 60_000,
+    enabled: createOpen,
+  })
+
+  const itemsQ = useQuery({
+    queryKey: ['catalog', 'items'],
+    queryFn: listItems,
+    staleTime: 60_000,
+    enabled: createOpen,
+  })
+
+  const createForm = useForm<CreateForm>({
+    resolver: zodResolver(createSchema),
+    defaultValues: { orderNumber: '', warehouseId: 1, itemId: 1, quantityOrdered: 1 },
+    mode: 'onChange',
+  })
+
+  const createM = useMutation({
+    mutationFn: (vals: CreateForm) =>
+      createSalesOrder({
+        orderNumber: vals.orderNumber,
+        warehouseId: vals.warehouseId,
+        lines: [{ itemId: vals.itemId, quantityOrdered: vals.quantityOrdered }],
+      }),
+    onSuccess: async (created: SalesOrder) => {
+      toast.success(`Created ${created.orderNumber}`)
+      setCreateOpen(false)
+      await qc.invalidateQueries({ queryKey: ['orders'] })
+    },
+    onError: () => toast.error('Failed to create sales order.'),
   })
 
   const mutation = useMutation({
@@ -65,6 +117,15 @@ export function OrdersPage() {
     },
   })
 
+  const cancelM = useMutation({
+    mutationFn: cancelSalesOrder,
+    onSuccess: async (updated: SalesOrder) => {
+      toast.success(`Cancelled ${updated.orderNumber}`)
+      await qc.invalidateQueries({ queryKey: ['orders'] })
+    },
+    onError: () => toast.error('Failed to cancel order.'),
+  })
+
   const items = data?.items ?? []
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -81,6 +142,20 @@ export function OrdersPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            size="sm"
+            onClick={() => {
+              if (!isAdmin) {
+                toast.error('Only ADMIN can create sales orders.')
+                return
+              }
+              setCreateOpen((v) => !v)
+            }}
+            disabled={!isAdmin}
+          >
+            {createOpen ? <X className="size-4" /> : <Plus className="size-4" />}
+            {createOpen ? 'Close' : 'Create order'}
+          </Button>
+          <Button
             variant="secondary"
             size="sm"
             onClick={() => refetch()}
@@ -91,6 +166,86 @@ export function OrdersPage() {
           </Button>
         </div>
       </div>
+
+      {createOpen && (
+        <Card className="p-0">
+          <CardHeader className="p-4">
+            <CardTitle>Create sales order (ADMIN)</CardTitle>
+          </CardHeader>
+          <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+            {warehousesQ.isError || itemsQ.isError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                Failed to load warehouses/items for create.
+              </div>
+            ) : warehousesQ.isPending || itemsQ.isPending ? (
+              <div className="space-y-3">
+                <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
+                <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
+              </div>
+            ) : (
+              <form
+                className="grid gap-3 md:grid-cols-4"
+                onSubmit={createForm.handleSubmit((vals) => createM.mutate(vals))}
+              >
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Order # (optional)</label>
+                  <input
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('orderNumber')}
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Warehouse</label>
+                  <select
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('warehouseId')}
+                  >
+                    {(warehousesQ.data ?? []).map((w) => (
+                      <option key={String(w.id)} value={Number(w.id)}>
+                        {w.code} · {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-3">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Item</label>
+                  <select
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('itemId')}
+                  >
+                    {(itemsQ.data ?? []).map((it) => (
+                      <option key={String(it.id)} value={Number(it.id)}>
+                        {it.sku} · {it.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Qty</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('quantityOrdered')}
+                  />
+                </div>
+
+                <div className="md:col-span-4 flex items-center gap-2">
+                  <Button type="submit" disabled={!createForm.formState.isValid || createM.isPending}>
+                    Create
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => createForm.reset()} disabled={createM.isPending}>
+                    Reset
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-0">
         <div className="border-b border-slate-200 p-4 dark:border-slate-800">
@@ -170,6 +325,7 @@ export function OrdersPage() {
               <TBody>
                 {items.map((o) => {
                   const next = getNextStatus(o.status)
+                  const canCancel = isAdmin && o.status !== 'SHIPPED' && o.status !== 'CANCELLED'
                   return (
                     <TR key={o.id}>
                       <TD className="whitespace-nowrap">
@@ -198,20 +354,36 @@ export function OrdersPage() {
                         </span>
                       </TD>
                       <TD className="text-right">
-                        {next ? (
+                        <div className="inline-flex items-center gap-2">
+                          {next ? (
+                            <Button
+                              size="sm"
+                              onClick={() => mutation.mutate({ id: o.id, currentStatus: o.status })}
+                              disabled={mutation.isPending}
+                            >
+                              {o.status === 'PENDING' ? 'Allocate' : o.status === 'PACKED' ? 'Ship' : 'Advance'}
+                              <ArrowRight className="size-4" />
+                            </Button>
+                          ) : (
+                            <Button variant="secondary" size="sm" disabled>
+                              Completed
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
-                            onClick={() => mutation.mutate({ id: o.id, currentStatus: o.status })}
-                            disabled={mutation.isPending}
+                            variant="danger"
+                            onClick={() => {
+                              if (!canCancel) return
+                              const ok = window.confirm(`Cancel order "${o.orderNumber}"?`)
+                              if (!ok) return
+                              cancelM.mutate(o.id)
+                            }}
+                            disabled={!canCancel || cancelM.isPending}
                           >
-                            Advance
-                            <ArrowRight className="size-4" />
+                            Cancel
                           </Button>
-                        ) : (
-                          <Button variant="secondary" size="sm" disabled>
-                            Completed
-                          </Button>
-                        )}
+                        </div>
                       </TD>
                     </TR>
                   )

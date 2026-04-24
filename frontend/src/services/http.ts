@@ -5,12 +5,34 @@ export const api = axios.create({
   timeout: 15_000,
 })
 
-api.interceptors.request.use((config) => {
+function readAccessToken(): string | null {
   const raw = localStorage.getItem('wms.auth')
-  const token = raw ? (JSON.parse(raw) as { state?: { accessToken?: string | null } })?.state?.accessToken : null
+  if (!raw) return null
+
+  try {
+    // Zustand persist commonly stores { state: { accessToken } }, but some setups store { accessToken } directly.
+    const parsed = JSON.parse(raw) as
+      | { state?: { accessToken?: string | null } }
+      | { accessToken?: string | null }
+      | unknown
+
+    if (typeof parsed === 'object' && parsed !== null) {
+      const p = parsed as { state?: { accessToken?: string | null }; accessToken?: string | null }
+      return p.state?.accessToken ?? p.accessToken ?? null
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+api.interceptors.request.use((config) => {
+  const token = readAccessToken()
   if (token) {
-    config.headers = config.headers ?? {}
-    config.headers.Authorization = `Bearer ${token}`
+    // Axios may use a plain object or AxiosHeaders internally; normalize to a plain object assignment.
+    config.headers = (config.headers ?? {}) as Record<string, string>
+    ;(config.headers as Record<string, string>).Authorization = `Bearer ${token}`
   }
   return config
 })

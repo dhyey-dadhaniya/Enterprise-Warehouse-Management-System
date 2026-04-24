@@ -8,6 +8,7 @@ import { ReceivingPutawayPage } from '../pages/receiving/ReceivingPutawayPage'
 import { OrdersPage } from '../pages/orders/OrdersPage'
 import { PickingPage } from '../pages/picking/PickingPage'
 import { BarcodeSimPage } from '../pages/barcode/BarcodeSimPage'
+import { ItemsPage } from '../pages/items/ItemsPage'
 import { AuthLayout } from '../pages/auth/AuthLayout'
 import { LoginPage } from '../pages/auth/LoginPage'
 import { RegisterPage } from '../pages/auth/RegisterPage'
@@ -27,10 +28,11 @@ export const appRouter = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
       {
-        element: <ProtectedRole allow={['ADMIN', 'MANAGER']} />,
+        element: <ProtectedRole allow={['ADMIN']} />,
         children: [
           { path: 'inventory', element: <InventoryPage /> },
           { path: 'warehouse-structure', element: <WarehouseStructurePage /> },
+          { path: 'items', element: <ItemsPage /> },
           { path: 'receiving-putaway', element: <ReceivingPutawayPage /> },
           { path: 'orders', element: <OrdersPage /> },
         ],

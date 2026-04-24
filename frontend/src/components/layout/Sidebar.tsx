@@ -5,6 +5,7 @@ import {
   Cable,
   ClipboardList,
   LayoutDashboard,
+  Package,
   PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
@@ -26,10 +27,11 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
-  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN', 'MANAGER'] },
-  { to: '/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN', 'MANAGER'] },
-  { to: '/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN', 'MANAGER', 'RECEIVER'] },
-  { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN'] },
+  { to: '/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN'] },
+  { to: '/items', label: 'Items', icon: Package, roles: ['ADMIN'] },
+  { to: '/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN'] },
+  { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN'] },
   { to: '/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR', 'PICKER'] },
   { to: '/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
 ]
