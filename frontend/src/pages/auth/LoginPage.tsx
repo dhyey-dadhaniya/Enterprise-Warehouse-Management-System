@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button'
 import { login, me } from '../../services/authService'
 import { useAuthStore } from '../../store/authStore'
 import type { UserRole } from '../../types/roles'
+import { getDefaultLandingPath } from '../../routes/roleLanding'
 
 const schema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -62,7 +63,7 @@ export function LoginPage() {
               roles: normalizeRoles(info.roles),
             })
             toast.success('Signed in')
-            navigate('/dashboard', { replace: true })
+            navigate(getDefaultLandingPath(normalizeRoles(info.roles)), { replace: true })
           } catch {
             toast.error('Invalid username or password')
           }

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppShellLayout } from '../layouts/AppShellLayout'
 import { ProtectedRole } from './protectedRole'
+import { PanelIndexRedirect } from './panelIndexRedirect'
 import { DashboardPage } from '../pages/DashboardPage'
 import { InventoryPage } from '../pages/inventory/InventoryPage'
 import { WarehouseStructurePage } from '../pages/warehouse/WarehouseStructurePage'
@@ -25,25 +26,42 @@ export const appRouter = createBrowserRouter([
     path: '/',
     element: <AppShellLayout />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
-      { path: 'dashboard', element: <DashboardPage /> },
+      { index: true, element: <PanelIndexRedirect /> },
+
+      // Back-compat routes → redirect to the correct panel
+      { path: 'dashboard', element: <PanelIndexRedirect /> },
+      { path: 'inventory', element: <Navigate to="/admin/inventory" replace /> },
+      { path: 'warehouse-structure', element: <Navigate to="/admin/warehouse-structure" replace /> },
+      { path: 'items', element: <Navigate to="/admin/items" replace /> },
+      { path: 'receiving-putaway', element: <Navigate to="/admin/receiving-putaway" replace /> },
+      { path: 'orders', element: <Navigate to="/admin/orders" replace /> },
+      { path: 'picking', element: <Navigate to="/console/picking" replace /> },
+      { path: 'barcode', element: <Navigate to="/console/barcode" replace /> },
+
+      // Admin panel
       {
         element: <ProtectedRole allow={['ADMIN']} />,
         children: [
-          { path: 'inventory', element: <InventoryPage /> },
-          { path: 'warehouse-structure', element: <WarehouseStructurePage /> },
-          { path: 'items', element: <ItemsPage /> },
-          { path: 'receiving-putaway', element: <ReceivingPutawayPage /> },
-          { path: 'orders', element: <OrdersPage /> },
+          { path: 'admin/dashboard', element: <DashboardPage /> },
+          { path: 'admin/inventory', element: <InventoryPage /> },
+          { path: 'admin/warehouse-structure', element: <WarehouseStructurePage /> },
+          { path: 'admin/items', element: <ItemsPage /> },
+          { path: 'admin/receiving-putaway', element: <ReceivingPutawayPage /> },
+          { path: 'admin/orders', element: <OrdersPage /> },
         ],
       },
+
+      // Console panel (ops)
       {
         element: <ProtectedRole allow={['OPERATOR', 'PICKER']} />,
-        children: [{ path: 'picking', element: <PickingPage /> }],
+        children: [{ path: 'console/picking', element: <PickingPage /> }],
       },
       {
         element: <ProtectedRole allow={['ADMIN', 'OPERATOR', 'MANAGER', 'RECEIVER', 'PICKER']} />,
-        children: [{ path: 'barcode', element: <BarcodeSimPage /> }],
+        children: [
+          { path: 'console/dashboard', element: <DashboardPage /> },
+          { path: 'console/barcode', element: <BarcodeSimPage /> },
+        ],
       },
       { path: '*', element: <Navigate to="/dashboard" replace /> },
     ],

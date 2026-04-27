@@ -11,6 +11,7 @@ import { Badge } from '../../components/ui/Badge'
 import type { Bin, Item, Warehouse, Zone } from '../../types/domain'
 import { listBins, listItems, listWarehouses, listZones } from '../../services/catalogService'
 import { suggestBinLocation } from '../../services/putawayLogic'
+import { createPutawayTask, type PutawayTaskResponse } from '../../services/putawayService'
 import { addInboundLine, buildInboundDocumentNumber, createInboundDocument, postReceipt } from '../../services/receivingService'
 
 const schema = z.object({
@@ -30,11 +31,14 @@ export function ReceivingPutawayPage() {
     zone: Zone
     bin: Bin
     quantity: number
+    inboundLineId: number
     suggestion: { aisle: string; bin: string; confidence: number; reason: string }
     at: string
+    putawayTask: PutawayTaskResponse | null
   } | null>(null)
 
   const [posting, setPosting] = useState(false)
+  const [creatingPutaway, setCreatingPutaway] = useState(false)
 
   const itemsQ = useQuery({
     queryKey: ['catalog', 'items'],
@@ -184,8 +188,10 @@ export function ReceivingPutawayPage() {
                       zone,
                       bin,
                       quantity: vals.quantity,
+                      inboundLineId: lineId,
                       suggestion: s,
                       at: new Date().toISOString(),
+                      putawayTask: null,
                     })
                     toast.success('Receiving posted to backend.')
                   } catch {
@@ -424,8 +430,32 @@ export function ReceivingPutawayPage() {
 
               <Button
                 variant="secondary"
-                onClick={() => toast.success('Putaway task created.')}
+                onClick={async () => {
+                  if (!confirmed) return
+                  if (confirmed.putawayTask) {
+                    toast('Putaway task already created.')
+                    return
+                  }
+
+                  try {
+                    setCreatingPutaway(true)
+                    const task = await createPutawayTask({
+                      warehouseId: Number(confirmed.warehouse.id),
+                      fromBinId: Number(confirmed.bin.id),
+                      itemId: Number(confirmed.item.id),
+                      quantity: confirmed.quantity,
+                      inboundDocumentLineId: confirmed.inboundLineId,
+                    })
+                    setConfirmed((prev) => (prev ? { ...prev, putawayTask: task } : prev))
+                    toast.success(`Putaway task created (ID: ${task.id}). Suggested bin: ${task.suggestedToBinCode}`)
+                  } catch {
+                    toast.error('Failed to create putaway task. Check backend logs.')
+                  } finally {
+                    setCreatingPutaway(false)
+                  }
+                }}
                 className="w-full"
+                disabled={!confirmed || creatingPutaway || !!confirmed.putawayTask}
               >
                 Create Putaway Task
               </Button>

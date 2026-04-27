@@ -17,6 +17,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useUiStore } from '../../store/uiStore'
 import type { UserRole } from '../../types/roles'
 import { Button } from '../ui/Button'
+import { getPanelKindForRoles } from '../../routes/roleLanding'
 
 type NavItem = {
   to: string
@@ -26,14 +27,15 @@ type NavItem = {
 }
 
 const navItems: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
-  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN'] },
-  { to: '/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN'] },
-  { to: '/items', label: 'Items', icon: Package, roles: ['ADMIN'] },
-  { to: '/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN'] },
-  { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN'] },
-  { to: '/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR', 'PICKER'] },
-  { to: '/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
+  { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },
+  { to: '/admin/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN'] },
+  { to: '/admin/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN'] },
+  { to: '/admin/items', label: 'Items', icon: Package, roles: ['ADMIN'] },
+  { to: '/admin/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN'] },
+  { to: '/admin/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN'] },
+  { to: '/console/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['OPERATOR', 'PICKER', 'MANAGER', 'RECEIVER'] },
+  { to: '/console/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR', 'PICKER'] },
+  { to: '/console/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
 ]
 
 export function Sidebar() {
@@ -62,6 +64,7 @@ export function SidebarContent({
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const isCollapsed = forceExpanded ? false : collapsed
   const primaryRole: UserRole | null = roles[0] ?? null
+  const panel = getPanelKindForRoles(roles)
 
   return (
     <div className="flex h-full flex-col">
@@ -78,7 +81,7 @@ export function SidebarContent({
                   Fulfill<span className="hazard-underline">Ops</span>
                 </div>
                 <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {primaryRole ? `${primaryRole} Console` : 'Not signed in'}
+                  {primaryRole ? `${panel === 'ADMIN' ? 'Admin Panel' : 'Console Panel'} · ${primaryRole}` : 'Not signed in'}
                 </div>
               </div>
             )}

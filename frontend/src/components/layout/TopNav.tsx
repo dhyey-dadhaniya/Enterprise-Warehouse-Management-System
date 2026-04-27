@@ -4,12 +4,16 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useUiStore } from '../../store/uiStore'
 import { Button } from '../ui/Button'
+import { getPanelKindForRoles } from '../../routes/roleLanding'
 
 export function TopNav() {
   const navigate = useNavigate()
   const { accessToken, username, roles, clearSession } = useAuthStore()
   const { darkMode, toggleDarkMode, openMobileSidebar } = useUiStore()
   const signedIn = Boolean(accessToken)
+  const panel = getPanelKindForRoles(roles)
+  const canSwitchToAdmin = roles.includes('ADMIN')
+  const canSwitchToConsole = roles.some((r) => ['OPERATOR', 'PICKER', 'MANAGER', 'RECEIVER'].includes(r))
 
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/60 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/45">
@@ -35,6 +39,18 @@ export function TopNav() {
         </div>
 
         <div className="flex items-center gap-2">
+          {signedIn && canSwitchToAdmin && canSwitchToConsole ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                navigate(panel === 'ADMIN' ? '/console/dashboard' : '/admin/dashboard')
+              }}
+            >
+              Switch to {panel === 'ADMIN' ? 'Console' : 'Admin'}
+            </Button>
+          ) : null}
+
           {signedIn ? (
             <Button
               variant="secondary"
@@ -77,7 +93,7 @@ export function TopNav() {
                 {username ?? '—'}
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                {roles.length ? roles.join(', ') : '—'}
+                {roles.length ? `${panel === 'ADMIN' ? 'Admin Panel' : 'Console Panel'} · ${roles.join(', ')}` : '—'}
               </div>
             </div>
             <div className="relative grid size-10 place-items-center overflow-hidden rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-900 shadow-soft dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
