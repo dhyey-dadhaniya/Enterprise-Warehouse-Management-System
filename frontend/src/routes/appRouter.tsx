@@ -57,6 +57,10 @@ export const appRouter = createBrowserRouter([
         children: [{ path: 'console/picking', element: <PickingPage /> }],
       },
       {
+        element: <ProtectedRole allow={['OPERATOR', 'RECEIVER']} />,
+        children: [{ path: 'console/receiving', element: <ReceivingPutawayPage /> }],
+      },
+      {
         element: <ProtectedRole allow={['ADMIN', 'OPERATOR', 'MANAGER', 'RECEIVER', 'PICKER']} />,
         children: [
           { path: 'console/dashboard', element: <DashboardPage /> },

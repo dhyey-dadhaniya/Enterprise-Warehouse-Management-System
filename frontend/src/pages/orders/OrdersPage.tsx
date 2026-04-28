@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
 import toast from 'react-hot-toast'
 import { ArrowRight, Plus, RefreshCcw, Search, X } from 'lucide-react'
 import type { SalesOrder, SalesOrderStatus } from '../../types/domain'
@@ -23,6 +24,16 @@ const createSchema = z.object({
 })
 
 type CreateForm = z.infer<typeof createSchema>
+
+function getApiErrorMessage(err: unknown): string | null {
+  if (!axios.isAxiosError(err)) return null
+  const data = err.response?.data as unknown
+  if (typeof data === 'object' && data !== null) {
+    const message = (data as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return err.message || null
+}
 
 function statusVariant(status: SalesOrderStatus) {
   if (status === 'SHIPPED') return 'success'
@@ -106,8 +117,8 @@ export function OrdersPage() {
 
       return { prev }
     },
-    onError: () => {
-      toast.error('Failed to advance order.')
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err) ?? 'Failed to advance order.')
     },
     onSuccess: (updated: SalesOrder) => {
       toast.success(`Order ${updated.orderNumber} → ${updated.status}`)

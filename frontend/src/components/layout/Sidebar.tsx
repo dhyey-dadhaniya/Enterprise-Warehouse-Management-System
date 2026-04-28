@@ -34,6 +34,7 @@ const navItems: NavItem[] = [
   { to: '/admin/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN'] },
   { to: '/admin/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN'] },
   { to: '/console/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['OPERATOR', 'PICKER', 'MANAGER', 'RECEIVER'] },
+  { to: '/console/receiving', label: 'Receiving', icon: Truck, roles: ['OPERATOR', 'RECEIVER'] },
   { to: '/console/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR', 'PICKER'] },
   { to: '/console/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'] },
 ]
