@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useForm, type FieldErrors } from 'react-hook-form'
+import { useForm, type FieldErrors, type Resolver } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
@@ -71,7 +71,7 @@ export function ReceivingPutawayPage() {
     reset,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as Resolver<FormValues>,
     defaultValues: { itemId: '', warehouseId: '', zoneId: '', binId: '', quantity: 1 },
     mode: 'onSubmit',
     reValidateMode: 'onChange',
@@ -173,7 +173,7 @@ export function ReceivingPutawayPage() {
                       itemId: Number(item.id),
                       expectedQty: vals.quantity,
                       lineNumber: 1,
-                      notes: null,
+                      notes: undefined,
                     })
 
                     const lineId = withLine.lines?.[0]?.id

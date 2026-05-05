@@ -6,9 +6,9 @@ import toast from 'react-hot-toast'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { Button } from '../../components/ui/Button'
+import { normalizeRoles } from '../../lib/roleUtils'
 import { login, me } from '../../services/authService'
 import { useAuthStore } from '../../store/authStore'
-import type { UserRole } from '../../types/roles'
 import { getDefaultLandingPath } from '../../routes/roleLanding'
 
 const schema = z.object({
@@ -17,12 +17,6 @@ const schema = z.object({
 })
 
 type FormValues = z.infer<typeof schema>
-
-function normalizeRoles(roles: string[]): UserRole[] {
-  return roles
-    .map((r) => r.replace(/^ROLE_/, ''))
-    .filter((r): r is UserRole => ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'].includes(r))
-}
 
 export function LoginPage() {
   const navigate = useNavigate()

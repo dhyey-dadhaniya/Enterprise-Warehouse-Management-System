@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -70,7 +70,7 @@ export function OrdersPage() {
   })
 
   const createForm = useForm<CreateForm>({
-    resolver: zodResolver(createSchema),
+    resolver: zodResolver(createSchema) as Resolver<CreateForm>,
     defaultValues: { orderNumber: '', warehouseId: 1, itemId: 1, quantityOrdered: 1 },
     mode: 'onChange',
   })
@@ -92,7 +92,7 @@ export function OrdersPage() {
 
   const mutation = useMutation({
     mutationFn: advanceOrder,
-    onMutate: async (vars: { id: string; currentStatus: SalesOrderStatus }) => {
+    onMutate: async (_vars: { id: string; currentStatus: SalesOrderStatus }) => {
       await qc.cancelQueries({ queryKey: ['orders'] })
       const prev = qc.getQueriesData({ queryKey: ['orders'] })
 
@@ -186,7 +186,7 @@ export function OrdersPage() {
             ) : (
               <form
                 className="grid gap-3 md:grid-cols-4"
-                onSubmit={createForm.handleSubmit((vals) => createM.mutate(vals))}
+                onSubmit={createForm.handleSubmit((vals: CreateForm) => createM.mutate(vals))}
               >
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Order # (optional)</label>

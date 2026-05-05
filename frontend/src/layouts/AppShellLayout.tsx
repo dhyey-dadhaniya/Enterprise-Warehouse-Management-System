@@ -3,15 +3,9 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '../components/layout/Sidebar'
 import { TopNav } from '../components/layout/TopNav'
 import { MobileSidebar } from '../components/layout/MobileSidebar'
+import { normalizeRoles } from '../lib/roleUtils'
 import { me } from '../services/authService'
 import { useAuthStore } from '../store/authStore'
-import type { UserRole } from '../types/roles'
-
-function normalizeRoles(roles: string[]): UserRole[] {
-  return roles
-    .map((r) => r.replace(/^ROLE_/, ''))
-    .filter((r): r is UserRole => ['ADMIN', 'MANAGER', 'RECEIVER', 'PICKER', 'OPERATOR'].includes(r))
-}
 
 export function AppShellLayout() {
   const navigate = useNavigate()

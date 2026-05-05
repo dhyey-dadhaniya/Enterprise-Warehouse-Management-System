@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useUiStore } from '../../store/uiStore'
 import { Button } from '../ui/Button'
+import { canSwitchAdminAndConsole } from '../../lib/roleUtils'
 import { getPanelKindForRoles } from '../../routes/roleLanding'
 
 export function TopNav() {
@@ -12,8 +13,7 @@ export function TopNav() {
   const { darkMode, toggleDarkMode, openMobileSidebar } = useUiStore()
   const signedIn = Boolean(accessToken)
   const panel = getPanelKindForRoles(roles)
-  const canSwitchToAdmin = roles.includes('ADMIN')
-  const canSwitchToConsole = roles.some((r) => ['OPERATOR', 'PICKER', 'MANAGER', 'RECEIVER'].includes(r))
+  const showPanelSwitch = canSwitchAdminAndConsole(roles)
 
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/60 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/45">
@@ -39,7 +39,7 @@ export function TopNav() {
         </div>
 
         <div className="flex items-center gap-2">
-          {signedIn && canSwitchToAdmin && canSwitchToConsole ? (
+          {signedIn && showPanelSwitch ? (
             <Button
               variant="secondary"
               size="sm"

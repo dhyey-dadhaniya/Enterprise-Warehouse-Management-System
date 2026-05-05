@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -80,7 +80,7 @@ export function InventoryPage() {
   })
 
   const adjustForm = useForm<AdjustForm>({
-    resolver: zodResolver(adjustSchema),
+    resolver: zodResolver(adjustSchema) as Resolver<AdjustForm>,
     defaultValues: {
       warehouseId: 1,
       binId: 1,
@@ -93,7 +93,7 @@ export function InventoryPage() {
   })
 
   const transferForm = useForm<TransferForm>({
-    resolver: zodResolver(transferSchema),
+    resolver: zodResolver(transferSchema) as Resolver<TransferForm>,
     defaultValues: {
       warehouseId: 1,
       fromBinId: 1,

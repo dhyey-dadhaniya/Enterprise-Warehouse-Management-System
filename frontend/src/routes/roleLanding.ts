@@ -1,9 +1,10 @@
+import { isAdmin } from '../lib/roleUtils'
 import type { UserRole } from '../types/roles'
 
 export type PanelKind = 'ADMIN' | 'CONSOLE'
 
 export function getPanelKindForRoles(roles: UserRole[]): PanelKind {
-  return roles.includes('ADMIN') ? 'ADMIN' : 'CONSOLE'
+  return isAdmin(roles) ? 'ADMIN' : 'CONSOLE'
 }
 
 export function getDefaultLandingPath(roles: UserRole[]): string {

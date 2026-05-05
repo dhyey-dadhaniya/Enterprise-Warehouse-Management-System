@@ -5,6 +5,7 @@ import {
   ScrollText,
   TrendingUp,
 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { Card, CardHeader, CardTitle } from '../components/ui/Card'
 import { cn } from '../lib/cn'
 
@@ -77,14 +78,17 @@ function Sparkline({ values }: { values: number[] }) {
 }
 
 export function DashboardPage() {
+  const { pathname } = useLocation()
+  const isAdminRoute = pathname.startsWith('/admin')
+  const scopeLabel = isAdminRoute ? 'Administration' : 'Operations'
+  const title = isAdminRoute ? 'Admin overview' : 'Console overview'
+
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-sm text-slate-600 dark:text-slate-400">Overview</div>
+        <div className="text-sm text-slate-600 dark:text-slate-400">{scopeLabel}</div>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-            Warehouse Dashboard
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{title}</h1>
           <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-xs text-slate-600 shadow-soft dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
             <TrendingUp className="size-3.5 text-amber-500 dark:text-amber-300" />
             Ops signal is mock · Replace with API

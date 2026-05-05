@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosHeaders } from 'axios'
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
@@ -30,9 +30,9 @@ function readAccessToken(): string | null {
 api.interceptors.request.use((config) => {
   const token = readAccessToken()
   if (token) {
-    // Axios may use a plain object or AxiosHeaders internally; normalize to a plain object assignment.
-    config.headers = (config.headers ?? {}) as Record<string, string>
-    ;(config.headers as Record<string, string>).Authorization = `Bearer ${token}`
+    const headers = AxiosHeaders.from(config.headers ?? {})
+    headers.set('Authorization', `Bearer ${token}`)
+    config.headers = headers
   }
   return config
 })
