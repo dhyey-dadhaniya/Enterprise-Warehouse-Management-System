@@ -46,6 +46,13 @@ public class Bin {
     @Column(length = 512)
     private String description;
 
+    /**
+     * Optional capacity in "units" for simple capacity optimization.
+     * When null, the bin is treated as unlimited capacity.
+     */
+    @Column(name = "capacity_units")
+    private Integer capacityUnits;
+
     @Column(nullable = false)
     private boolean active = true;
 

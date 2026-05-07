@@ -1,5 +1,6 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.MessageResponse;
 import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.master.dto.AisleRequest;
 import com.infotact.wms.master.dto.AisleResponse;
@@ -64,9 +65,9 @@ public class AisleController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<MessageResponse> delete(@PathVariable Long id) {
         aisleService.delete(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new MessageResponse("Aisle deleted successfully"));
     }
 }
 

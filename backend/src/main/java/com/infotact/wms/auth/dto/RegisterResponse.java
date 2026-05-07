@@ -1,10 +1,7 @@
 package com.infotact.wms.auth.dto;
 
 public record RegisterResponse(
-        String message
+        String message,
+        String username
 ) {
-    public static RegisterResponse created() {
-        return new RegisterResponse("User registered successfully");
-    }
 }
-

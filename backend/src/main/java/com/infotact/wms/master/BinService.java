@@ -59,6 +59,7 @@ public class BinService {
         b.setAisle(aisle);
         b.setCode(code);
         b.setDescription(trimToNull(request.description()));
+        b.setCapacityUnits(request.capacityUnits());
         b.setActive(request.active() == null || request.active());
         return MasterDataMapper.toResponse(binRepository.save(b));
     }
@@ -81,6 +82,7 @@ public class BinService {
         } else {
             b.setAisle(null);
         }
+        b.setCapacityUnits(request.capacityUnits());
         if (request.active() != null) {
             b.setActive(request.active());
         }

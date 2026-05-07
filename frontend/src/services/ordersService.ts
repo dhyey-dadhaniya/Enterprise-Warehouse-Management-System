@@ -1,87 +1,233 @@
-import type { SalesOrder, SalesOrderStatus } from '../types/domain'
+import type { Order, OrderStatus } from '../types/domain'
 import { api } from './http'
+import type { ID } from '../types/domain'
 
-type PageResponse<T> = {
-  content: T[]
-  totalElements: number
-  totalPages: number
-  page: number
-  size: number
-  first: boolean
-  last: boolean
+export interface SalesOrderDetailLine {
+  id: number
+  lineNumber: number
+  itemId: number
+  sku: string
+  quantityOrdered: number
+  quantityAllocated: number
+  quantityPicked: number
 }
 
-type SalesOrdersListResponse = {
-  items: SalesOrder[]
-  total: number
+export interface SalesOrderDetail {
+  id: number
+  orderNumber: string
+  warehouseId: number
+  warehouseCode: string
+  status: OrderStatus
+  lines: SalesOrderDetailLine[]
+  createdAt: string
+  updatedAt: string
 }
 
 export async function listOrders(input: {
-  query?: string
-  status?: SalesOrderStatus | ''
   page: number
   pageSize: number
-}): Promise<SalesOrdersListResponse> {
-  const res = await api.get<PageResponse<SalesOrder>>('/sales-orders', {
-    params: { page: Math.max(0, input.page - 1), size: input.pageSize },
-  })
+  warehouseId?: number
+}): Promise<{ items: Order[]; total: number }> {
+  const params = new URLSearchParams()
+  if (input.warehouseId != null) params.set('warehouseId', String(input.warehouseId))
+  params.set('page', String(Math.max(0, input.page - 1)))
+  params.set('size', String(input.pageSize))
 
-  // Backend doesn't currently expose free-text search params; filter client-side for now.
-  const q = (input.query ?? '').trim().toLowerCase()
-  const status = (input.status ?? '').trim()
+  const res = await api.get<{
+    content: Array<{
+      id: number
+      warehouseId: number
+      warehouseCode: string
+      orderNumber: string
+      status: OrderStatus
+      createdAt: string
+      updatedAt: string
+      lines: Array<{
+        id: number
+        lineNumber: number
+        itemId: number
+        sku: string
+        quantityOrdered: string
+        quantityAllocated: string
+        quantityPicked: string
+      }>
+    }>
+    totalElements: number
+  }>(`/sales-orders?${params.toString()}`)
 
-  let items = res.data.content
-  if (status) items = items.filter((o) => o.status === status)
-  if (q) {
-    items = items.filter((o) => {
-      if (o.orderNumber.toLowerCase().includes(q)) return true
-      return o.lines.some((l) => l.sku.toLowerCase().includes(q))
-    })
+  return {
+    items: res.data.content.map((o) => ({
+      id: String(o.id) as ID,
+      number: o.orderNumber,
+      status: o.status,
+      priority: 'MEDIUM',
+      warehouseId: o.warehouseId,
+      createdAt: o.createdAt,
+      lines: o.lines.map((l) => ({
+        id: String(l.id) as ID,
+        sku: l.sku,
+        name: l.sku,
+        qty: Number(l.quantityOrdered),
+        warehouseName: o.warehouseCode,
+        aisle: '',
+        bin: '',
+      })),
+    })),
+    total: res.data.totalElements,
   }
-
-  return { items, total: res.data.totalElements }
 }
 
-export async function advanceOrder(input: { id: string; currentStatus: SalesOrderStatus }): Promise<SalesOrder> {
-  if (input.currentStatus === 'PENDING') {
-    const res = await api.post<SalesOrder>(`/sales-orders/${input.id}/allocate`)
-    return res.data
+export async function getSalesOrder(id: number): Promise<SalesOrderDetail> {
+  const res = await api.get<{
+    id: number
+    orderNumber: string
+    warehouseId: number
+    warehouseCode: string
+    status: OrderStatus
+    createdAt: string
+    updatedAt: string
+    lines: Array<{
+      id: number
+      lineNumber: number
+      itemId: number
+      sku: string
+      quantityOrdered: string
+      quantityAllocated: string
+      quantityPicked: string
+    }>
+  }>(`/sales-orders/${id}`)
+  const o = res.data
+  return {
+    id: o.id,
+    orderNumber: o.orderNumber,
+    warehouseId: o.warehouseId,
+    warehouseCode: o.warehouseCode,
+    status: o.status,
+    createdAt: o.createdAt,
+    updatedAt: o.updatedAt,
+    lines: o.lines.map((l) => ({
+      id: l.id,
+      lineNumber: l.lineNumber,
+      itemId: l.itemId,
+      sku: l.sku,
+      quantityOrdered: Number(l.quantityOrdered),
+      quantityAllocated: Number(l.quantityAllocated),
+      quantityPicked: Number(l.quantityPicked),
+    })),
   }
-  if (input.currentStatus === 'PICKING') {
-    const res = await api.patch<SalesOrder>(`/sales-orders/${input.id}/pack`, undefined, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    })
-    return res.data
-  }
-  if (input.currentStatus === 'PACKED') {
-    const res = await api.patch<SalesOrder>(`/sales-orders/${input.id}/ship`)
-    return res.data
-  }
-  return await api.get<SalesOrder>(`/sales-orders/${input.id}`).then((r) => r.data)
 }
 
-export async function createSalesOrder(input: {
+export async function cancelOrder(id: number): Promise<void> {
+  await api.patch(`/sales-orders/${id}/cancel`, null)
+}
+
+export async function createOrder(data: {
   orderNumber?: string
   warehouseId: number
   lines: Array<{ itemId: number; quantityOrdered: number }>
-}): Promise<SalesOrder> {
-  const res = await api.post<SalesOrder>('/sales-orders', {
-    orderNumber: input.orderNumber?.trim() || undefined,
-    warehouseId: input.warehouseId,
-    lines: input.lines.map((l) => ({ itemId: l.itemId, quantityOrdered: l.quantityOrdered })),
-  })
-  return res.data
+}): Promise<void> {
+  await api.post('/sales-orders', data)
 }
 
-export async function cancelSalesOrder(id: string): Promise<SalesOrder> {
-  const res = await api.patch<SalesOrder>(`/sales-orders/${id}/cancel`)
-  return res.data
+export async function advanceOrder(input: { id: string; current: OrderStatus; warehouseId?: number }): Promise<void> {
+  const orderId = Number(input.id)
+
+  if (input.current === 'PENDING') {
+    try {
+      await api.post(`/sales-orders/${orderId}/allocate`, null)
+    } catch {
+      // Ignore if already allocated (409) — proceed to wave creation
+    }
+    await api.post('/pick-waves', { warehouseId: input.warehouseId, salesOrderIds: [orderId] })
+    return
+  }
+  if (input.current === 'PICKING') {
+    await api.patch(`/sales-orders/${orderId}/pack`, null)
+    return
+  }
+  if (input.current === 'PACKED') {
+    await api.patch(`/sales-orders/${orderId}/ship`, null)
+    return
+  }
 }
 
-export function getNextStatus(current: SalesOrderStatus): SalesOrderStatus | null {
+export function getNextStatus(current: OrderStatus): OrderStatus | null {
   if (current === 'PENDING') return 'PICKING'
   if (current === 'PICKING') return 'PACKED'
   if (current === 'PACKED') return 'SHIPPED'
   return null
 }
 
+export interface PickTask {
+  id: number
+  pickWaveId: number
+  salesOrderId: number
+  warehouseId: number
+  binId: number
+  binCode: string
+  zoneCode: string
+  itemId: number
+  sku: string
+  quantityToPick: string
+  quantityPicked: string
+  status: 'PENDING' | 'COMPLETED'
+  routeSequence: number
+}
+
+export async function listPickTasks(params: {
+  status?: 'PENDING' | 'COMPLETED'
+  warehouseId?: number
+  page?: number
+  size?: number
+}): Promise<{ content: PickTask[]; totalElements: number }> {
+  const p = new URLSearchParams()
+  if (params.status) p.set('status', params.status)
+  if (params.warehouseId != null) p.set('warehouseId', String(params.warehouseId))
+  p.set('page', String(params.page ?? 0))
+  p.set('size', String(params.size ?? 50))
+  const res = await api.get<{ content: PickTask[]; totalElements: number }>(
+    `/pick-tasks?${p.toString()}`,
+  )
+  return res.data
+}
+
+export async function listPickTasksByWave(waveId: number): Promise<PickTask[]> {
+  const res = await api.get<PickTask[]>(`/pick-tasks?waveId=${waveId}`)
+  return res.data
+}
+
+export async function getPickTask(id: number): Promise<PickTask> {
+  const res = await api.get<PickTask>(`/pick-tasks/${id}`)
+  return res.data
+}
+
+export interface PickWave {
+  id: number
+  waveCode: string
+  warehouseId: number
+  status: string
+  salesOrderIds: number[]
+  taskCount: number
+  createdAt: string
+}
+
+export async function getPickWave(id: number): Promise<PickWave> {
+  const res = await api.get<PickWave>(`/pick-waves/${id}`)
+  return res.data
+}
+
+export async function createPickWave(data: {
+  warehouseId: number
+  salesOrderIds: number[]
+}): Promise<PickWave> {
+  const res = await api.post<PickWave>('/pick-waves', data)
+  return res.data
+}
+
+export async function confirmPickTask(id: number): Promise<void> {
+  await api.post(
+    `/pick-tasks/${id}/confirm-pick`,
+    null,
+    { headers: { 'Idempotency-Key': `pick-${id}-${Date.now()}` } },
+  )
+}

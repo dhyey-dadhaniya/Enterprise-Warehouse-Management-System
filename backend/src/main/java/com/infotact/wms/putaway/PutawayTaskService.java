@@ -73,14 +73,14 @@ public class PutawayTaskService {
     }
 
     @Transactional(readOnly = true)
-    public PutawaySuggestionResponse previewSuggestion(Long warehouseId, Long itemId, Long fromBinId) {
+    public PutawaySuggestionResponse previewSuggestion(Long warehouseId, Long itemId, Long fromBinId, BigDecimal quantity) {
         warehouseRepository.findById(warehouseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Warehouse not found: " + warehouseId));
         Bin from = loadBinInWarehouse(fromBinId, warehouseId);
         itemRepository.findById(itemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemId));
         PutawaySuggestionService.PutawaySuggestion suggestion = putawaySuggestionService
-                .suggest(warehouseId, itemId, fromBinId)
+                .suggest(warehouseId, itemId, fromBinId, quantity)
                 .orElseThrow(() -> new ConflictException("No suitable storage bin found for putaway"));
         return new PutawaySuggestionResponse(warehouseId, itemId, from.getId(), suggestion.suggestedBinId(), suggestion.rule());
     }
@@ -132,7 +132,7 @@ public class PutawayTaskService {
         }
 
         PutawaySuggestionService.PutawaySuggestion suggestion = putawaySuggestionService
-                .suggest(warehouse.getId(), item.getId(), fromBin.getId())
+                .suggest(warehouse.getId(), item.getId(), fromBin.getId(), request.quantity())
                 .orElseThrow(() -> new ConflictException("No suitable storage bin found for putaway"));
 
         Bin suggestedTo = binRepository.findById(suggestion.suggestedBinId())
@@ -220,6 +220,7 @@ public class PutawayTaskService {
         if (toBin.getId().equals(fromBin.getId())) {
             throw new ConflictException("Destination bin must differ from source bin");
         }
+        assertBinCapacity(warehouse.getId(), toBin, qty);
 
         InventoryBalance fromBalance = inventoryBalanceRepository
                 .findForUpdate(warehouse.getId(), fromBin.getId(), item.getId())
@@ -283,6 +284,21 @@ public class PutawayTaskService {
         PutawayTask saved = putawayTaskRepository.save(task);
         touch(saved);
         return PutawayMapper.toResponse(saved);
+    }
+
+    private void assertBinCapacity(Long warehouseId, Bin bin, BigDecimal qty) {
+        Integer cap = bin.getCapacityUnits();
+        if (cap == null) {
+            return;
+        }
+        BigDecimal used = inventoryBalanceRepository.sumUsedQtyInBin(warehouseId, bin.getId());
+        BigDecimal remaining = BigDecimal.valueOf(cap).subtract(used);
+        if (remaining.compareTo(qty) < 0) {
+            throw new ConflictException(
+                    "Bin capacity exceeded for " + bin.getCode()
+                            + " (capacity=" + cap + ", used=" + used + ", incoming=" + qty + ")"
+            );
+        }
     }
 
     private static String buildConfirmLedgerNote(String userNote, Bin from, Bin to) {

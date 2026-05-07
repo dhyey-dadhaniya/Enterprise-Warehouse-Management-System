@@ -40,9 +40,10 @@ public class PutawayTaskController {
     public PutawaySuggestionResponse suggestion(
             @RequestParam Long warehouseId,
             @RequestParam Long itemId,
-            @RequestParam Long fromBinId
+            @RequestParam Long fromBinId,
+            @RequestParam(required = false) java.math.BigDecimal quantity
     ) {
-        return putawayTaskService.previewSuggestion(warehouseId, itemId, fromBinId);
+        return putawayTaskService.previewSuggestion(warehouseId, itemId, fromBinId, quantity);
     }
 
     @GetMapping

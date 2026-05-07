@@ -1,951 +1,736 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
-import { Layers3, Pencil, Plus, RefreshCcw, Trash2, Warehouse as WarehouseIcon, X } from 'lucide-react'
-
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Trash2, Pencil, Eye, ChevronDown, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
-import { Card, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card'
-import { Table, TBody, TD, TH, THead, TR } from '../../components/ui/Table'
-import { cn } from '../../lib/cn'
-import { useAuthStore } from '../../store/authStore'
-import type { Aisle, Bin, Warehouse, Zone } from '../../types/domain'
+import { Table, THead, TH, TBody, TR, TD } from '../../components/ui/Table'
 import {
-  createAisle,
-  createBin,
-  createZone,
-  deleteAisle,
-  deleteBin,
-  deleteZone,
-  listAisles,
-  listBins,
-  listZones,
-  createWarehouse,
-  deleteWarehouse,
-  listWarehouses,
-  updateAisle,
-  updateBin,
-  updateZone,
-  updateWarehouse,
-  type AisleUpsertInput,
-  type BinUpsertInput,
-  type ZoneUpsertInput,
-  type WarehouseUpsertInput,
-} from '../../services/catalogService'
+  getWarehouses, getWarehouse, createWarehouse, updateWarehouse, deleteWarehouse,
+  getZones, getZone, createZone, updateZone, deleteZone,
+  getAisles, getAisle, createAisle, updateAisle, deleteAisle,
+  getBins, getBin, createBin, updateBin, deleteBin,
+} from '../../services/warehouseService'
+import type { WarehouseDetail, Zone, Aisle, Bin } from '../../types/domain'
+import { cn } from '../../lib/cn'
 
-const schema = z.object({
-  code: z
-    .string()
-    .min(1, 'Code is required')
-    .max(32, 'Max 32 characters')
-    .regex(/^[A-Za-z0-9][A-Za-z0-9-_]*$/, 'Use letters/numbers and -/_ only'),
-  name: z.string().min(1, 'Name is required').max(120, 'Max 120 characters'),
-  addressLine: z.string().max(255, 'Max 255 characters').optional(),
-})
+type Tab = 'warehouses' | 'zones' | 'aisles' | 'bins'
 
-type FormValues = z.infer<typeof schema>
-
-type Mode = { type: 'create' } | { type: 'edit'; warehouse: Warehouse } | { type: 'none' }
-
-const zoneSchema = z.object({
-  code: z.string().min(1, 'Code is required').max(64, 'Max 64 characters'),
-  name: z.string().min(1, 'Name is required').max(255, 'Max 255 characters'),
-})
-type ZoneForm = z.infer<typeof zoneSchema>
-
-const aisleSchema = z.object({
-  code: z.string().min(1, 'Code is required').max(64, 'Max 64 characters'),
-  name: z.string().min(1, 'Name is required').max(255, 'Max 255 characters'),
-})
-type AisleForm = z.infer<typeof aisleSchema>
-
-const binSchema = z.object({
-  code: z.string().min(1, 'Code is required').max(64, 'Max 64 characters'),
-  description: z.string().max(512, 'Max 512 characters').optional(),
-  aisleId: z.string().optional(),
-  active: z.boolean().optional(),
-})
-type BinForm = z.infer<typeof binSchema>
+const emptyForm = { code: '', name: '', addressLine: '', description: '', capacityUnits: '' }
 
 export function WarehouseStructurePage() {
-  const qc = useQueryClient()
-  const roles = useAuthStore((s) => s.roles)
-  const isAdmin = roles.includes('ADMIN')
+  const [tab, setTab] = useState<Tab>('warehouses')
 
-  const [tab, setTab] = useState<'warehouses' | 'zones' | 'aisles' | 'bins'>('warehouses')
+  // Data
+  const [warehouses, setWarehouses] = useState<WarehouseDetail[]>([])
+  const [zones, setZones] = useState<Zone[]>([])
+  const [aisles, setAisles] = useState<Aisle[]>([])
+  const [bins, setBins] = useState<Bin[]>([])
 
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('')
-  const [selectedZoneId, setSelectedZoneId] = useState<string>('')
-  const [selectedAisleId, setSelectedAisleId] = useState<string>('')
+  // Selectors
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | ''>('')
+  const [selectedZoneId, setSelectedZoneId] = useState<number | ''>('')
+  const [zonesForSubTab, setZonesForSubTab] = useState<Zone[]>([])
 
-  const [mode, setMode] = useState<Mode>({ type: 'none' })
+  // UI state
+  const [loading, setLoading] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [showModal, setShowModal] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState(emptyForm)
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
-  const warehousesQ = useQuery({
-    queryKey: ['catalog', 'warehouses'],
-    queryFn: listWarehouses,
-    staleTime: 30_000,
-  })
+  // View modal state
+  const [viewItem, setViewItem] = useState<WarehouseDetail | Zone | Aisle | Bin | null>(null)
+  const [viewLoading, setViewLoading] = useState(false)
+  const [viewError, setViewError] = useState<string | null>(null)
 
-  const warehouses = warehousesQ.data ?? []
-  const selected = mode.type === 'edit' ? mode.warehouse : null
-
+  // ── Load warehouses once ──────────────────────────────────────────
   useEffect(() => {
-    // UX: if user opens Zones/Aisles/Bins first, pick the first warehouse automatically.
-    if (tab !== 'warehouses' && !selectedWarehouseId && warehouses.length > 0) {
-      setSelectedWarehouseId(warehouses[0]!.id)
+    getWarehouses()
+      .then((r) => setWarehouses(r.content))
+      .catch(() => setPageError('Failed to load warehouses'))
+  }, [])
+
+  // ── Loaders ───────────────────────────────────────────────────────
+  const loadZones = useCallback(async (warehouseId: number) => {
+    setLoading(true)
+    setPageError(null)
+    try {
+      setZones((await getZones(warehouseId)).content)
+    } catch {
+      setPageError('Failed to load zones')
+    } finally {
+      setLoading(false)
     }
-  }, [selectedWarehouseId, tab, warehouses])
+  }, [])
 
-  const zonesQ = useQuery({
-    queryKey: ['catalog', 'zones', { warehouseId: selectedWarehouseId }],
-    queryFn: () => listZones(selectedWarehouseId),
-    enabled: tab !== 'warehouses' && !!selectedWarehouseId,
-    staleTime: 30_000,
-  })
-  const zones = zonesQ.data ?? []
+  const loadZonesForSubTab = useCallback(async (warehouseId: number) => {
+    try {
+      setZonesForSubTab((await getZones(warehouseId)).content)
+    } catch {
+      setZonesForSubTab([])
+    }
+  }, [])
 
-  const aislesQ = useQuery({
-    queryKey: ['catalog', 'aisles', { zoneId: selectedZoneId }],
-    queryFn: () => listAisles(selectedZoneId),
-    enabled: (tab === 'aisles' || tab === 'bins') && !!selectedZoneId,
-    staleTime: 30_000,
-  })
-  const aisles = aislesQ.data ?? []
+  const loadAisles = useCallback(async (zoneId: number) => {
+    setLoading(true)
+    setPageError(null)
+    try {
+      setAisles((await getAisles(zoneId)).content)
+    } catch {
+      setPageError('Failed to load aisles')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const binsQ = useQuery({
-    queryKey: ['catalog', 'bins', { zoneId: selectedZoneId }],
-    queryFn: () => listBins(selectedZoneId),
-    enabled: tab === 'bins' && !!selectedZoneId,
-    staleTime: 30_000,
-  })
-  const bins = binsQ.data ?? []
+  const loadBins = useCallback(async (zoneId: number) => {
+    setLoading(true)
+    setPageError(null)
+    try {
+      setBins((await getBins(zoneId)).content)
+    } catch {
+      setPageError('Failed to load bins')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { code: '', name: '', addressLine: '' },
-    mode: 'onChange',
-  })
+  // ── Selection handlers ────────────────────────────────────────────
+  const handleWarehouseSelect = (id: number | '') => {
+    setSelectedWarehouseId(id)
+    setZones([])
+    if (id !== '') loadZones(id)
+  }
 
-  const zoneForm = useForm<ZoneForm>({
-    resolver: zodResolver(zoneSchema),
-    defaultValues: { code: '', name: '' },
-    mode: 'onChange',
-  })
+  const handleWarehouseSelectForSubTab = (id: number | '') => {
+    setSelectedWarehouseId(id)
+    setSelectedZoneId('')
+    setAisles([])
+    setBins([])
+    setZonesForSubTab([])
+    if (id !== '') loadZonesForSubTab(id)
+  }
 
-  const aisleForm = useForm<AisleForm>({
-    resolver: zodResolver(aisleSchema),
-    defaultValues: { code: '', name: '' },
-    mode: 'onChange',
-  })
+  const handleZoneSelect = (id: number | '') => {
+    setSelectedZoneId(id)
+    setAisles([])
+    setBins([])
+    if (id !== '') {
+      if (tab === 'aisles') loadAisles(id)
+      else loadBins(id)
+    }
+  }
 
-  const binForm = useForm<BinForm>({
-    resolver: zodResolver(binSchema),
-    defaultValues: { code: '', description: '', aisleId: '', active: true },
-    mode: 'onChange',
-  })
+  // ── Tab switch ────────────────────────────────────────────────────
+  const switchTab = (t: Tab) => {
+    setTab(t)
+    setPageError(null)
+    setSelectedWarehouseId('')
+    setSelectedZoneId('')
+    setZones([])
+    setAisles([])
+    setBins([])
+    setZonesForSubTab([])
+  }
 
-  const busy = warehousesQ.isPending
+  // ── Open create modal ─────────────────────────────────────────────
+  const openCreate = () => {
+    setEditingId(null)
+    setForm(emptyForm)
+    setFormError(null)
+    setShowModal(true)
+  }
 
-  const createM = useMutation({
-    mutationFn: (input: WarehouseUpsertInput) => createWarehouse(input),
-    onSuccess: async () => {
-      toast.success('Warehouse created.')
-      setMode({ type: 'none' })
-      form.reset({ code: '', name: '', addressLine: '' })
-      await qc.invalidateQueries({ queryKey: ['catalog', 'warehouses'] })
-    },
-    onError: () => toast.error('Failed to create warehouse.'),
-  })
+  // ── Open edit modal ───────────────────────────────────────────────
+  const openEdit = (id: number, prefill: Partial<typeof emptyForm>) => {
+    setEditingId(id)
+    setForm({ ...emptyForm, ...prefill })
+    setFormError(null)
+    setShowModal(true)
+  }
 
-  const updateM = useMutation({
-    mutationFn: (vars: { id: string; input: WarehouseUpsertInput }) => updateWarehouse(vars.id, vars.input),
-    onSuccess: async () => {
-      toast.success('Warehouse updated.')
-      setMode({ type: 'none' })
-      form.reset({ code: '', name: '', addressLine: '' })
-      await qc.invalidateQueries({ queryKey: ['catalog', 'warehouses'] })
-    },
-    onError: () => toast.error('Failed to update warehouse.'),
-  })
+  // ── Open view modal ───────────────────────────────────────────────
+  const openView = async (id: number) => {
+    setViewItem(null)
+    setViewError(null)
+    setViewLoading(true)
+    try {
+      if (tab === 'warehouses') setViewItem(await getWarehouse(id))
+      else if (tab === 'zones') setViewItem(await getZone(id))
+      else if (tab === 'aisles') setViewItem(await getAisle(id))
+      else setViewItem(await getBin(id))
+    } catch {
+      setViewError('Failed to load details.')
+    } finally {
+      setViewLoading(false)
+    }
+  }
 
-  const deleteM = useMutation({
-    mutationFn: (id: string) => deleteWarehouse(id),
-    onSuccess: async () => {
-      toast.success('Warehouse deleted.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'warehouses'] })
-    },
-    onError: () => toast.error('Failed to delete warehouse.'),
-  })
+  // ── Submit (create or update) ─────────────────────────────────────
+  const handleSubmit = async () => {
+    setSaving(true)
+    setFormError(null)
+    try {
+      if (tab === 'warehouses') {
+        const payload = { code: form.code, name: form.name, addressLine: form.addressLine || undefined }
+        if (editingId !== null) {
+          const updated = await updateWarehouse(editingId, payload)
+          setWarehouses((prev) => prev.map((w) => (w.id === editingId ? updated : w)))
+        } else {
+          await createWarehouse(payload)
+          setWarehouses((await getWarehouses()).content)
+        }
+      } else if (tab === 'zones' && selectedWarehouseId !== '') {
+        const payload = { code: form.code, name: form.name }
+        if (editingId !== null) {
+          const updated = await updateZone(editingId, payload)
+          setZones((prev) => prev.map((z) => (z.id === editingId ? updated : z)))
+        } else {
+          await createZone(selectedWarehouseId, payload)
+          loadZones(selectedWarehouseId)
+        }
+      } else if (tab === 'aisles' && selectedZoneId !== '') {
+        const payload = { code: form.code, name: form.name }
+        if (editingId !== null) {
+          const updated = await updateAisle(editingId, payload)
+          setAisles((prev) => prev.map((a) => (a.id === editingId ? updated : a)))
+        } else {
+          await createAisle(selectedZoneId, payload)
+          loadAisles(selectedZoneId)
+        }
+      } else if (tab === 'bins' && selectedZoneId !== '') {
+        const payload = {
+          code: form.code,
+          description: form.description || undefined,
+          capacityUnits: form.capacityUnits ? parseInt(form.capacityUnits, 10) : undefined,
+        }
+        if (editingId !== null) {
+          const updated = await updateBin(editingId, payload)
+          setBins((prev) => prev.map((b) => (b.id === editingId ? updated : b)))
+        } else {
+          await createBin(selectedZoneId, payload)
+          loadBins(selectedZoneId)
+        }
+      }
+      setShowModal(false)
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setFormError(msg ?? `Failed to ${editingId !== null ? 'update' : 'create'}. Ensure the code is unique.`)
+    } finally {
+      setSaving(false)
+    }
+  }
 
-  const createZoneM = useMutation({
-    mutationFn: (vars: { warehouseId: string; input: ZoneUpsertInput }) => createZone(vars.warehouseId, vars.input),
-    onSuccess: async () => {
-      toast.success('Zone created.')
-      zoneForm.reset({ code: '', name: '' })
-      await qc.invalidateQueries({ queryKey: ['catalog', 'zones'] })
-    },
-    onError: () => toast.error('Failed to create zone.'),
-  })
+  // ── Delete ─────────────────────────────────────────────────────────
+  const handleDelete = async (id: number) => {
+    const noun = { warehouses: 'warehouse', zones: 'zone', aisles: 'aisle', bins: 'bin' }[tab]
+    if (!window.confirm(`Delete this ${noun}? This cannot be undone.`)) return
+    setPageError(null)
+    try {
+      if (tab === 'warehouses') {
+        await deleteWarehouse(id)
+        setWarehouses((await getWarehouses()).content)
+      } else if (tab === 'zones' && selectedWarehouseId !== '') {
+        await deleteZone(id)
+        loadZones(selectedWarehouseId)
+      } else if (tab === 'aisles' && selectedZoneId !== '') {
+        await deleteAisle(id)
+        loadAisles(selectedZoneId)
+      } else if (tab === 'bins' && selectedZoneId !== '') {
+        await deleteBin(id)
+        loadBins(selectedZoneId)
+      }
+    } catch {
+      setPageError('Failed to delete. It may have dependent records.')
+    }
+  }
 
-  const updateZoneM = useMutation({
-    mutationFn: (vars: { id: string; input: ZoneUpsertInput }) => updateZone(vars.id, vars.input),
-    onSuccess: async () => {
-      toast.success('Zone updated.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'zones'] })
-    },
-    onError: () => toast.error('Failed to update zone.'),
-  })
+  const createLabel = { warehouses: 'New Warehouse', zones: 'New Zone', aisles: 'New Aisle', bins: 'New Bin' }[tab]
+  const modalTitle = editingId !== null
+    ? `Edit ${tab.slice(0, -1).charAt(0).toUpperCase() + tab.slice(1, -1)}`
+    : createLabel
 
-  const deleteZoneM = useMutation({
-    mutationFn: (id: string) => deleteZone(id),
-    onSuccess: async () => {
-      toast.success('Zone deleted.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'zones'] })
-    },
-    onError: () => toast.error('Failed to delete zone.'),
-  })
+  const requiresName = tab !== 'bins'
+  const canSubmit = !saving && !!form.code && (!requiresName || !!form.name)
 
-  const createAisleM = useMutation({
-    mutationFn: (vars: { zoneId: string; input: AisleUpsertInput }) => createAisle(vars.zoneId, vars.input),
-    onSuccess: async () => {
-      toast.success('Aisle created.')
-      aisleForm.reset({ code: '', name: '' })
-      await qc.invalidateQueries({ queryKey: ['catalog', 'aisles'] })
-    },
-    onError: () => toast.error('Failed to create aisle.'),
-  })
+  const createDisabled =
+    (tab === 'zones' && selectedWarehouseId === '') ||
+    (tab === 'aisles' && selectedZoneId === '') ||
+    (tab === 'bins' && selectedZoneId === '')
 
-  const updateAisleM = useMutation({
-    mutationFn: (vars: { id: string; input: AisleUpsertInput }) => updateAisle(vars.id, vars.input),
-    onSuccess: async () => {
-      toast.success('Aisle updated.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'aisles'] })
-    },
-    onError: () => toast.error('Failed to update aisle.'),
-  })
-
-  const deleteAisleM = useMutation({
-    mutationFn: (id: string) => deleteAisle(id),
-    onSuccess: async () => {
-      toast.success('Aisle deleted.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'aisles'] })
-    },
-    onError: () => toast.error('Failed to delete aisle.'),
-  })
-
-  const createBinM = useMutation({
-    mutationFn: (vars: { zoneId: string; input: BinUpsertInput }) => createBin(vars.zoneId, vars.input),
-    onSuccess: async () => {
-      toast.success('Bin created.')
-      binForm.reset({ code: '', description: '', aisleId: '', active: true })
-      await qc.invalidateQueries({ queryKey: ['catalog', 'bins'] })
-    },
-    onError: () => toast.error('Failed to create bin.'),
-  })
-
-  const updateBinM = useMutation({
-    mutationFn: (vars: { id: string; input: BinUpsertInput }) => updateBin(vars.id, vars.input),
-    onSuccess: async () => {
-      toast.success('Bin updated.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'bins'] })
-    },
-    onError: () => toast.error('Failed to update bin.'),
-  })
-
-  const deleteBinM = useMutation({
-    mutationFn: (id: string) => deleteBin(id),
-    onSuccess: async () => {
-      toast.success('Bin deleted.')
-      await qc.invalidateQueries({ queryKey: ['catalog', 'bins'] })
-    },
-    onError: () => toast.error('Failed to delete bin.'),
-  })
-
-  const actionBusy =
-    createM.isPending ||
-    updateM.isPending ||
-    deleteM.isPending ||
-    createZoneM.isPending ||
-    updateZoneM.isPending ||
-    deleteZoneM.isPending ||
-    createAisleM.isPending ||
-    updateAisleM.isPending ||
-    deleteAisleM.isPending ||
-    createBinM.isPending ||
-    updateBinM.isPending ||
-    deleteBinM.isPending
-
-  const title = useMemo(() => {
-    if (mode.type === 'create') return 'Add Warehouse'
-    if (mode.type === 'edit') return 'Edit Warehouse'
-    return 'Warehouses'
-  }, [mode.type])
+  const needsZoneSelector = tab === 'aisles' || tab === 'bins'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="text-sm text-slate-600 dark:text-slate-400">Master data</div>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-            <WarehouseIcon className="size-6" />
-            Warehouse Structure
-          </h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (tab === 'warehouses') warehousesQ.refetch()
-              if (tab === 'zones') zonesQ.refetch()
-              if (tab === 'aisles') aislesQ.refetch()
-              if (tab === 'bins') binsQ.refetch()
-            }}
-            disabled={warehousesQ.isFetching || zonesQ.isFetching || aislesQ.isFetching || binsQ.isFetching}
-          >
-            <RefreshCcw
-              className={cn(
-                'size-4',
-                (warehousesQ.isFetching || zonesQ.isFetching || aislesQ.isFetching || binsQ.isFetching) && 'animate-spin',
-              )}
-            />
-            Refresh
-          </Button>
-
-          {tab === 'warehouses' && (
-            <Button
-              size="sm"
-              onClick={() => {
-                if (!isAdmin) {
-                  toast.error('Only ADMIN can create warehouses.')
-                  return
-                }
-                setMode({ type: 'create' })
-                form.reset({ code: '', name: '', addressLine: '' })
-              }}
-              disabled={!isAdmin}
-            >
-              <Plus className="size-4" />
-              Add
-            </Button>
-          )}
-        </div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+          Warehouse Structure
+        </h1>
+        <Button onClick={openCreate} disabled={createDisabled} title={createDisabled ? 'Select a parent first' : undefined}>
+          <Plus className="size-4" />
+          {createLabel}
+        </Button>
       </div>
 
-      <Card className="p-0">
-        <CardHeader className="p-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Layers3 className="size-4" />
-              {tab === 'warehouses' ? title : tab === 'zones' ? 'Zones' : tab === 'aisles' ? 'Aisles' : 'Bins'}
-            </CardTitle>
-            <CardDescription>
-              ADMIN can create/update/delete.
-            </CardDescription>
-          </div>
-          {tab === 'warehouses' && mode.type !== 'none' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setMode({ type: 'none' })
-                form.reset({ code: '', name: '', addressLine: '' })
-              }}
-            >
-              <X className="size-4" />
-              Close
-            </Button>
-          )}
-        </CardHeader>
+      {/* Tabs */}
+      <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1 dark:border-slate-800 dark:bg-slate-900/50">
+        {(['warehouses', 'zones', 'aisles', 'bins'] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => switchTab(t)}
+            className={cn(
+              'flex-1 rounded-lg py-2 text-sm font-medium capitalize transition',
+              tab === t
+                ? 'bg-white text-slate-900 shadow-soft dark:bg-slate-950 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+            )}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-        <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant={tab === 'warehouses' ? 'primary' : 'secondary'} onClick={() => setTab('warehouses')}>
-                Warehouses
-              </Button>
-              <Button
-                size="sm"
-                variant={tab === 'zones' ? 'primary' : 'secondary'}
-                onClick={() => setTab('zones')}
+      {/* Selectors */}
+      {tab === 'zones' && (
+        <SelectField
+          label="Select Warehouse"
+          value={selectedWarehouseId}
+          onChange={(v) => handleWarehouseSelect(v === '' ? '' : Number(v))}
+          options={warehouses.map((w) => ({ value: w.id, label: `${w.code} — ${w.name}` }))}
+          placeholder="Choose a warehouse…"
+        />
+      )}
+
+      {needsZoneSelector && (
+        <div className="flex gap-4">
+          <SelectField
+            label="Select Warehouse"
+            value={selectedWarehouseId}
+            onChange={(v) => handleWarehouseSelectForSubTab(v === '' ? '' : Number(v))}
+            options={warehouses.map((w) => ({ value: w.id, label: `${w.code} — ${w.name}` }))}
+            placeholder="Choose a warehouse…"
+            className="flex-1"
+          />
+          <SelectField
+            label="Select Zone"
+            value={selectedZoneId}
+            onChange={(v) => handleZoneSelect(v === '' ? '' : Number(v))}
+            options={zonesForSubTab.map((z) => ({ value: z.id, label: `${z.code} — ${z.name}` }))}
+            placeholder={selectedWarehouseId === '' ? 'Select warehouse first' : 'Choose a zone…'}
+            disabled={selectedWarehouseId === ''}
+            className="flex-1"
+          />
+        </div>
+      )}
+
+      {pageError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">
+          {pageError}
+        </div>
+      )}
+
+      {/* Tables */}
+      {loading ? (
+        <div className="flex justify-center py-16 text-sm text-slate-400">Loading…</div>
+      ) : tab === 'warehouses' ? (
+        warehouses.length === 0 ? (
+          <EmptyState label="warehouse" onAdd={openCreate} />
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>Code</TH>
+                <TH>Name</TH>
+                <TH>Address</TH>
+                <TH className="text-right">Actions</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {warehouses.map((w) => (
+                <TR key={w.id}>
+                  <TD className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{w.code}</TD>
+                  <TD className="font-medium text-slate-900 dark:text-slate-100">{w.name}</TD>
+                  <TD className="text-slate-500 dark:text-slate-400">{w.addressLine ?? '—'}</TD>
+                  <TD className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openView(w.id)}>
+                        <Eye className="size-4 text-slate-400" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(w.id, { code: w.code, name: w.name, addressLine: w.addressLine ?? '' })}>
+                        <Pencil className="size-4 text-slate-500" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(w.id)}>
+                        <Trash2 className="size-4 text-rose-500" />
+                      </Button>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )
+      ) : tab === 'zones' ? (
+        selectedWarehouseId === '' ? (
+          <div className="flex justify-center py-16 text-sm text-slate-400">Select a warehouse to view its zones.</div>
+        ) : zones.length === 0 ? (
+          <EmptyState label="zone" onAdd={openCreate} />
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>Code</TH>
+                <TH>Name</TH>
+                <TH className="text-right">Actions</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {zones.map((z) => (
+                <TR key={z.id}>
+                  <TD className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{z.code}</TD>
+                  <TD className="font-medium text-slate-900 dark:text-slate-100">{z.name}</TD>
+                  <TD className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openView(z.id)}>
+                        <Eye className="size-4 text-slate-400" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(z.id, { code: z.code, name: z.name })}>
+                        <Pencil className="size-4 text-slate-500" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(z.id)}>
+                        <Trash2 className="size-4 text-rose-500" />
+                      </Button>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )
+      ) : tab === 'aisles' ? (
+        selectedZoneId === '' ? (
+          <div className="flex justify-center py-16 text-sm text-slate-400">Select a warehouse and zone to view aisles.</div>
+        ) : aisles.length === 0 ? (
+          <EmptyState label="aisle" onAdd={openCreate} />
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>Code</TH>
+                <TH>Name</TH>
+                <TH className="text-right">Actions</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {aisles.map((a) => (
+                <TR key={a.id}>
+                  <TD className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{a.code}</TD>
+                  <TD className="font-medium text-slate-900 dark:text-slate-100">{a.name}</TD>
+                  <TD className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openView(a.id)}>
+                        <Eye className="size-4 text-slate-400" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(a.id, { code: a.code, name: a.name })}>
+                        <Pencil className="size-4 text-slate-500" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(a.id)}>
+                        <Trash2 className="size-4 text-rose-500" />
+                      </Button>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )
+      ) : (
+        selectedZoneId === '' ? (
+          <div className="flex justify-center py-16 text-sm text-slate-400">Select a warehouse and zone to view bins.</div>
+        ) : bins.length === 0 ? (
+          <EmptyState label="bin" onAdd={openCreate} />
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>Code</TH>
+                <TH>Description</TH>
+                <TH>Capacity</TH>
+                <TH>Status</TH>
+                <TH className="text-right">Actions</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {bins.map((b) => (
+                <TR key={b.id}>
+                  <TD className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{b.code}</TD>
+                  <TD className="text-slate-700 dark:text-slate-300">{b.description ?? '—'}</TD>
+                  <TD className="text-slate-500 dark:text-slate-400">{b.capacityUnits != null ? b.capacityUnits : '∞'}</TD>
+                  <TD>
+                    <span className={cn(
+                      'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                      b.active
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                    )}>
+                      {b.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </TD>
+                  <TD className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openView(b.id)}>
+                        <Eye className="size-4 text-slate-400" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(b.id, { code: b.code, description: b.description ?? '', capacityUnits: b.capacityUnits != null ? String(b.capacityUnits) : '' })}>
+                        <Pencil className="size-4 text-slate-500" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(b.id)}>
+                        <Trash2 className="size-4 text-rose-500" />
+                      </Button>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )
+      )}
+
+      {/* View modal */}
+      {(viewLoading || viewItem || viewError) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                {{ warehouses: 'Warehouse', zones: 'Zone', aisles: 'Aisle', bins: 'Bin' }[tab]} Details
+              </h2>
+              <button
+                onClick={() => { setViewItem(null); setViewError(null) }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
               >
-                Zones
-              </Button>
-              <Button
-                size="sm"
-                variant={tab === 'aisles' ? 'primary' : 'secondary'}
-                onClick={() => setTab('aisles')}
-              >
-                Aisles
-              </Button>
-              <Button size="sm" variant={tab === 'bins' ? 'primary' : 'secondary'} onClick={() => setTab('bins')}>
-                Bins
-              </Button>
+                <X className="size-4" />
+              </button>
             </div>
 
-            {tab !== 'warehouses' && (
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={selectedWarehouseId}
-                  onChange={(e) => {
-                    const wid = e.target.value
-                    setSelectedWarehouseId(wid)
-                    setSelectedZoneId('')
-                    setSelectedAisleId('')
-                  }}
-                  className="h-10 rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:ring-amber-400/20"
-                >
-                  <option value="">Select warehouse…</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.code} · {w.name}
-                    </option>
-                  ))}
-                </select>
+            {viewLoading && (
+              <div className="mt-6 flex justify-center py-8 text-sm text-slate-400">Loading…</div>
+            )}
 
-                {(tab === 'aisles' || tab === 'bins') && (
-                  <select
-                    value={selectedZoneId}
-                    onChange={(e) => {
-                      const zid = e.target.value
-                      setSelectedZoneId(zid)
-                      setSelectedAisleId('')
-                    }}
-                    disabled={!selectedWarehouseId}
-                    className="h-10 rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none focus:ring-2 focus:ring-amber-200 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:ring-amber-400/20"
-                  >
-                    <option value="">Select zone…</option>
-                    {zones.map((z) => (
-                      <option key={z.id} value={z.id}>
-                        {z.code} · {z.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+            {viewError && (
+              <p className="mt-4 text-sm text-rose-600 dark:text-rose-400">{viewError}</p>
+            )}
 
-                {tab === 'bins' && (
-                  <select
-                    value={selectedAisleId}
-                    onChange={(e) => setSelectedAisleId(e.target.value)}
-                    disabled={!selectedZoneId}
-                    className="h-10 rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none focus:ring-2 focus:ring-amber-200 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:ring-amber-400/20"
-                  >
-                    <option value="">(Optional) Aisle…</option>
-                    {aisles.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code} · {a.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+            {viewItem && !viewLoading && (
+              <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+                {tab === 'warehouses' && (() => {
+                  const w = viewItem as WarehouseDetail
+                  return (
+                    <>
+                      <DetailRow label="ID" value={String(w.id)} />
+                      <DetailRow label="Code" value={w.code} mono />
+                      <DetailRow label="Name" value={w.name} />
+                      <DetailRow label="Address" value={w.addressLine ?? '—'} />
+                      <DetailRow label="Created" value={new Date(w.createdAt).toLocaleString()} />
+                      <DetailRow label="Updated" value={new Date(w.updatedAt).toLocaleString()} />
+                    </>
+                  )
+                })()}
+                {tab === 'zones' && (() => {
+                  const z = viewItem as Zone
+                  return (
+                    <>
+                      <DetailRow label="ID" value={String(z.id)} />
+                      <DetailRow label="Code" value={z.code} mono />
+                      <DetailRow label="Name" value={z.name} />
+                      <DetailRow label="Warehouse ID" value={String(z.warehouseId)} />
+                      <DetailRow label="Created" value={new Date(z.createdAt).toLocaleString()} />
+                      <DetailRow label="Updated" value={new Date(z.updatedAt).toLocaleString()} />
+                    </>
+                  )
+                })()}
+                {tab === 'aisles' && (() => {
+                  const a = viewItem as Aisle
+                  return (
+                    <>
+                      <DetailRow label="ID" value={String(a.id)} />
+                      <DetailRow label="Code" value={a.code} mono />
+                      <DetailRow label="Name" value={a.name} />
+                      <DetailRow label="Zone ID" value={String(a.zoneId)} />
+                      <DetailRow label="Warehouse ID" value={String(a.warehouseId)} />
+                      <DetailRow label="Created" value={new Date(a.createdAt).toLocaleString()} />
+                      <DetailRow label="Updated" value={new Date(a.updatedAt).toLocaleString()} />
+                    </>
+                  )
+                })()}
+                {tab === 'bins' && (() => {
+                  const b = viewItem as Bin
+                  return (
+                    <>
+                      <DetailRow label="ID" value={String(b.id)} />
+                      <DetailRow label="Code" value={b.code} mono />
+                      <DetailRow label="Description" value={b.description ?? '—'} />
+                      <DetailRow label="Capacity" value={b.capacityUnits != null ? String(b.capacityUnits) : '∞'} />
+                      <DetailRow label="Status" value={b.active ? 'Active' : 'Inactive'} />
+                      <DetailRow label="Zone ID" value={String(b.zoneId)} />
+                      <DetailRow label="Warehouse ID" value={String(b.warehouseId)} />
+                      {b.aisleId != null && <DetailRow label="Aisle ID" value={String(b.aisleId)} />}
+                      <DetailRow label="Created" value={new Date(b.createdAt).toLocaleString()} />
+                      <DetailRow label="Updated" value={new Date(b.updatedAt).toLocaleString()} />
+                    </>
+                  )
+                })()}
               </div>
             )}
+
+            <div className="mt-6 flex justify-end">
+              <Button variant="secondary" onClick={() => { setViewItem(null); setViewError(null) }}>
+                Close
+              </Button>
+            </div>
           </div>
         </div>
+      )}
 
-        {tab === 'warehouses' && mode.type !== 'none' && (
-          <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-            <form
-              className="grid gap-3 md:grid-cols-3"
-              onSubmit={form.handleSubmit((vals) => {
-                if (!isAdmin) {
-                  toast.error('Only ADMIN can save warehouses.')
-                  return
-                }
-                const input: WarehouseUpsertInput = {
-                  code: vals.code.trim(),
-                  name: vals.name.trim(),
-                  addressLine: vals.addressLine?.trim() ? vals.addressLine.trim() : null,
-                }
-                if (mode.type === 'create') {
-                  createM.mutate(input)
-                } else if (mode.type === 'edit') {
-                  updateM.mutate({ id: mode.warehouse.id, input })
-                }
-              })}
-            >
-              <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Code</label>
-                <input
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
-                  {...form.register('code')}
+      {/* Create / Edit modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{modalTitle}</h2>
+
+            <div className="mt-4 space-y-3">
+              <FormField
+                label="Code *"
+                value={form.code}
+                onChange={(v) => setForm((f) => ({ ...f, code: v }))}
+                placeholder={tab === 'warehouses' ? 'e.g. WH-01' : tab === 'zones' ? 'e.g. ZONE-A' : tab === 'aisles' ? 'e.g. AISLE-1' : 'e.g. BIN-001'}
+              />
+              {requiresName && (
+                <FormField
+                  label="Name *"
+                  value={form.name}
+                  onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+                  placeholder={tab === 'warehouses' ? 'e.g. Main Warehouse' : tab === 'zones' ? 'e.g. Frozen Zone' : 'e.g. Aisle 1'}
                 />
-                {form.formState.errors.code && (
-                  <div className="text-xs text-rose-600 dark:text-rose-300">
-                    {form.formState.errors.code.message}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Name</label>
-                <input
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
-                  {...form.register('name')}
+              )}
+              {tab === 'warehouses' && (
+                <FormField
+                  label="Address"
+                  value={form.addressLine}
+                  onChange={(v) => setForm((f) => ({ ...f, addressLine: v }))}
+                  placeholder="Optional"
                 />
-                {form.formState.errors.name && (
-                  <div className="text-xs text-rose-600 dark:text-rose-300">
-                    {form.formState.errors.name.message}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Address</label>
-                <input
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
-                  {...form.register('addressLine')}
-                />
-                {form.formState.errors.addressLine && (
-                  <div className="text-xs text-rose-600 dark:text-rose-300">
-                    {form.formState.errors.addressLine.message}
-                  </div>
-                )}
-              </div>
-
-              <div className="md:col-span-3 flex flex-wrap items-center gap-2 pt-1">
-                <Button type="submit" disabled={!form.formState.isValid || !isAdmin || actionBusy}>
-                  {mode.type === 'create' ? 'Create' : 'Save'}
-                </Button>
-                {mode.type === 'edit' && selected && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      form.reset({
-                        code: selected.code ?? '',
-                        name: selected.name ?? '',
-                        addressLine: selected.addressLine ?? '',
-                      })
-                    }}
-                    disabled={actionBusy}
-                  >
-                    Reset
-                  </Button>
-                )}
-              </div>
-            </form>
-          </div>
-        )}
-
-        {tab === 'zones' && (
-          <div className="border-t border-slate-200 p-4 dark:border-slate-800 space-y-4">
-            {!selectedWarehouseId ? (
-              <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                Select a warehouse to manage zones.
-              </div>
-            ) : (
-              <>
-                <form
-                  className="grid gap-3 md:grid-cols-3"
-                  onSubmit={zoneForm.handleSubmit((vals) => {
-                    if (!isAdmin) return toast.error('Only ADMIN can create zones.')
-                    createZoneM.mutate({ warehouseId: selectedWarehouseId, input: { code: vals.code.trim(), name: vals.name.trim() } })
-                  })}
-                >
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Code</label>
-                    <input className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm dark:border-slate-800 dark:bg-slate-950/70" {...zoneForm.register('code')} />
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Name</label>
-                    <input className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm dark:border-slate-800 dark:bg-slate-950/70" {...zoneForm.register('name')} />
-                  </div>
-                  <div className="md:col-span-3">
-                    <Button type="submit" disabled={!isAdmin || !zoneForm.formState.isValid || actionBusy}>
-                      <Plus className="size-4" />
-                      Add Zone
-                    </Button>
-                  </div>
-                </form>
-
-                {zonesQ.isError ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
-                    Failed to load zones.
-                  </div>
-                ) : zonesQ.isPending ? (
-                  <div className="space-y-3">
-                    <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-                    <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-                  </div>
-                ) : zones.length === 0 ? (
-                  <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                    No zones yet.
-                  </div>
-                ) : (
-                  <Table>
-                    <THead>
-                      <tr>
-                        <TH>Code</TH>
-                        <TH>Name</TH>
-                        <TH className="text-right">Actions</TH>
-                      </tr>
-                    </THead>
-                    <TBody>
-                      {zones.map((z: Zone) => (
-                        <TR key={z.id}>
-                          <TD className="text-mono font-semibold text-slate-900 dark:text-slate-100">{z.code}</TD>
-                          <TD className="text-slate-900 dark:text-slate-100">{z.name}</TD>
-                          <TD className="text-right">
-                            <div className="inline-flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  if (!isAdmin) return toast.error('Only ADMIN can edit zones.')
-                                  const code = window.prompt('Zone code', z.code) ?? z.code
-                                  const name = window.prompt('Zone name', z.name) ?? z.name
-                                  updateZoneM.mutate({ id: z.id, input: { code: code.trim(), name: name.trim() } })
-                                }}
-                                disabled={!isAdmin || actionBusy}
-                              >
-                                <Pencil className="size-4" />
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={() => {
-                                  if (!isAdmin) return toast.error('Only ADMIN can delete zones.')
-                                  const ok = window.confirm(`Delete zone "${z.code}"?`)
-                                  if (!ok) return
-                                  deleteZoneM.mutate(z.id)
-                                }}
-                                disabled={!isAdmin || actionBusy}
-                              >
-                                <Trash2 className="size-4" />
-                                Delete
-                              </Button>
-                            </div>
-                          </TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === 'aisles' && (
-          <div className="border-t border-slate-200 p-4 dark:border-slate-800 space-y-4">
-            {!selectedZoneId ? (
-              <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                Select a warehouse + zone to manage aisles. If your zone list is empty, create a zone first in the Zones tab.
-                <div className="mt-3">
-                  <Button variant="secondary" size="sm" onClick={() => setTab('zones')}>
-                    Go to Zones
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <form
-                  className="grid gap-3 md:grid-cols-3"
-                  onSubmit={aisleForm.handleSubmit((vals) => {
-                    if (!isAdmin) return toast.error('Only ADMIN can create aisles.')
-                    createAisleM.mutate({ zoneId: selectedZoneId, input: { code: vals.code.trim(), name: vals.name.trim() } })
-                  })}
-                >
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Code</label>
-                    <input className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm dark:border-slate-800 dark:bg-slate-950/70" {...aisleForm.register('code')} />
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Name</label>
-                    <input className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm dark:border-slate-800 dark:bg-slate-950/70" {...aisleForm.register('name')} />
-                  </div>
-                  <div className="md:col-span-3">
-                    <Button type="submit" disabled={!isAdmin || !aisleForm.formState.isValid || actionBusy}>
-                      <Plus className="size-4" />
-                      Add Aisle
-                    </Button>
-                  </div>
-                </form>
-
-                {aislesQ.isError ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
-                    Failed to load aisles.
-                  </div>
-                ) : aislesQ.isPending ? (
-                  <div className="space-y-3">
-                    <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-                    <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-                  </div>
-                ) : aisles.length === 0 ? (
-                  <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                    No aisles yet.
-                  </div>
-                ) : (
-                  <Table>
-                    <THead>
-                      <tr>
-                        <TH>Code</TH>
-                        <TH>Name</TH>
-                        <TH className="text-right">Actions</TH>
-                      </tr>
-                    </THead>
-                    <TBody>
-                      {aisles.map((a: Aisle) => (
-                        <TR key={a.id}>
-                          <TD className="text-mono font-semibold text-slate-900 dark:text-slate-100">{a.code}</TD>
-                          <TD className="text-slate-900 dark:text-slate-100">{a.name}</TD>
-                          <TD className="text-right">
-                            <div className="inline-flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  if (!isAdmin) return toast.error('Only ADMIN can edit aisles.')
-                                  const code = window.prompt('Aisle code', a.code) ?? a.code
-                                  const name = window.prompt('Aisle name', a.name) ?? a.name
-                                  updateAisleM.mutate({ id: a.id, input: { code: code.trim(), name: name.trim() } })
-                                }}
-                                disabled={!isAdmin || actionBusy}
-                              >
-                                <Pencil className="size-4" />
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={() => {
-                                  if (!isAdmin) return toast.error('Only ADMIN can delete aisles.')
-                                  const ok = window.confirm(`Delete aisle "${a.code}"?`)
-                                  if (!ok) return
-                                  deleteAisleM.mutate(a.id)
-                                }}
-                                disabled={!isAdmin || actionBusy}
-                              >
-                                <Trash2 className="size-4" />
-                                Delete
-                              </Button>
-                            </div>
-                          </TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === 'bins' && (
-          <div className="border-t border-slate-200 p-4 dark:border-slate-800 space-y-4">
-            {!selectedZoneId ? (
-              <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                Select a warehouse + zone to manage bins. If your zone list is empty, create a zone first in the Zones tab.
-                <div className="mt-3">
-                  <Button variant="secondary" size="sm" onClick={() => setTab('zones')}>
-                    Go to Zones
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <form
-                  className="grid gap-3 md:grid-cols-4"
-                  onSubmit={binForm.handleSubmit((vals) => {
-                    if (!isAdmin) return toast.error('Only ADMIN can create bins.')
-                    createBinM.mutate({
-                      zoneId: selectedZoneId,
-                      input: {
-                        code: vals.code.trim(),
-                        description: vals.description?.trim() ? vals.description.trim() : null,
-                        aisleId: vals.aisleId?.trim() ? vals.aisleId.trim() : null,
-                        active: vals.active ?? true,
-                      },
-                    })
-                  })}
-                >
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Code</label>
-                    <input className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm dark:border-slate-800 dark:bg-slate-950/70" {...binForm.register('code')} />
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Description</label>
-                    <input className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm dark:border-slate-800 dark:bg-slate-950/70" {...binForm.register('description')} />
-                  </div>
-                  <div className="flex items-center gap-2 pt-7">
-                    <input type="checkbox" {...binForm.register('active')} />
-                    <span className="text-sm text-slate-700 dark:text-slate-200">Active</span>
-                  </div>
-                  <div className="md:col-span-4">
-                    <Button type="submit" disabled={!isAdmin || !binForm.formState.isValid || actionBusy}>
-                      <Plus className="size-4" />
-                      Add Bin
-                    </Button>
-                  </div>
-                </form>
-
-                {binsQ.isError ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
-                    Failed to load bins.
-                  </div>
-                ) : binsQ.isPending ? (
-                  <div className="space-y-3">
-                    <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-                    <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-                  </div>
-                ) : bins.length === 0 ? (
-                  <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                    No bins yet.
-                  </div>
-                ) : (
-                  <Table>
-                    <THead>
-                      <tr>
-                        <TH>Code</TH>
-                        <TH>Description</TH>
-                        <TH>Status</TH>
-                        <TH className="text-right">Actions</TH>
-                      </tr>
-                    </THead>
-                    <TBody>
-                      {bins.map((b: Bin) => (
-                        <TR key={b.id}>
-                          <TD className="text-mono font-semibold text-slate-900 dark:text-slate-100">{b.code}</TD>
-                          <TD className="text-slate-700 dark:text-slate-200">{b.description ?? '—'}</TD>
-                          <TD className="text-mono">{b.active ? 'ACTIVE' : 'INACTIVE'}</TD>
-                          <TD className="text-right">
-                            <div className="inline-flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  if (!isAdmin) return toast.error('Only ADMIN can edit bins.')
-                                  const code = window.prompt('Bin code', b.code) ?? b.code
-                                  const description = window.prompt('Bin description', b.description ?? '') ?? (b.description ?? '')
-                                  const activeStr = window.prompt('Active? (true/false)', String(b.active)) ?? String(b.active)
-                                  updateBinM.mutate({
-                                    id: b.id,
-                                    input: {
-                                      code: code.trim(),
-                                      description: description.trim() ? description.trim() : null,
-                                      aisleId: b.aisleId,
-                                      active: activeStr.trim().toLowerCase() === 'true',
-                                    },
-                                  })
-                                }}
-                                disabled={!isAdmin || actionBusy}
-                              >
-                                <Pencil className="size-4" />
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={() => {
-                                  if (!isAdmin) return toast.error('Only ADMIN can delete bins.')
-                                  const ok = window.confirm(`Delete bin "${b.code}"?`)
-                                  if (!ok) return
-                                  deleteBinM.mutate(b.id)
-                                }}
-                                disabled={!isAdmin || actionBusy}
-                              >
-                                <Trash2 className="size-4" />
-                                Delete
-                              </Button>
-                            </div>
-                          </TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === 'warehouses' && (
-          <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-            {warehousesQ.isError ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
-              Failed to load warehouses.
+              )}
+              {tab === 'bins' && (
+                <>
+                  <FormField
+                    label="Description"
+                    value={form.description}
+                    onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+                    placeholder="Optional"
+                  />
+                  <FormField
+                    label="Capacity (units)"
+                    type="number"
+                    value={form.capacityUnits}
+                    onChange={(v) => setForm((f) => ({ ...f, capacityUnits: v }))}
+                    placeholder="Leave blank for unlimited"
+                  />
+                </>
+              )}
             </div>
-          ) : busy ? (
-            <div className="space-y-3">
-              <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-              <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
-              <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
+
+            {formError && (
+              <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{formError}</p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowModal(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button onClick={handleSubmit} disabled={!canSubmit}>
+                {saving ? (editingId !== null ? 'Saving…' : 'Creating…') : (editingId !== null ? 'Save' : 'Create')}
+              </Button>
             </div>
-          ) : warehouses.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white/60 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-              No warehouses yet. {isAdmin ? 'Create your first warehouse using Add.' : ''}
-            </div>
-          ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH>Code</TH>
-                  <TH>Name</TH>
-                  <TH>Address</TH>
-                  <TH className="text-right">Actions</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {warehouses.map((w) => (
-                  <TR key={w.id}>
-                    <TD className="text-mono font-semibold text-slate-900 dark:text-slate-100">{w.code}</TD>
-                    <TD className="text-slate-900 dark:text-slate-100">{w.name}</TD>
-                    <TD className="text-slate-600 dark:text-slate-300">{w.addressLine ?? '—'}</TD>
-                    <TD className="text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            if (!isAdmin) {
-                              toast.error('Only ADMIN can edit warehouses.')
-                              return
-                            }
-                            setMode({ type: 'edit', warehouse: w })
-                            form.reset({
-                              code: w.code ?? '',
-                              name: w.name ?? '',
-                              addressLine: w.addressLine ?? '',
-                            })
-                          }}
-                          disabled={!isAdmin}
-                        >
-                          <Pencil className="size-4" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => {
-                            if (!isAdmin) {
-                              toast.error('Only ADMIN can delete warehouses.')
-                              return
-                            }
-                            const ok = window.confirm(`Delete warehouse "${w.name}"?`)
-                            if (!ok) return
-                            deleteM.mutate(w.id)
-                          }}
-                          disabled={!isAdmin || actionBusy}
-                        >
-                          <Trash2 className="size-4" />
-                          Delete
-                        </Button>
-                      </div>
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          )}
+          </div>
         </div>
-        )}
-      </Card>
+      )}
     </div>
   )
 }
 
+// ── Helper components ───────────────────────────────────────────────────────
+
+function SelectField({
+  label, value, onChange, options, placeholder, disabled, className,
+}: {
+  label: string
+  value: number | ''
+  onChange: (v: string) => void
+  options: { value: number; label: string }[]
+  placeholder?: string
+  disabled?: boolean
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">{label}</label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 focus:border-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-slate-500"
+        >
+          <option value="">{placeholder ?? 'Select…'}</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+      </div>
+    </div>
+  )
+}
+
+function FormField({
+  label, value, onChange, placeholder, type = 'text',
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  type?: string
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-slate-500"
+      />
+    </div>
+  )
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-4 py-2.5">
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      <span className={cn('text-right text-sm text-slate-900 dark:text-slate-100', mono && 'font-mono')}>{value}</span>
+    </div>
+  )
+}
+
+function EmptyState({ label, onAdd }: { label: string; onAdd: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-16 text-sm text-slate-400">
+      <span>No {label}s found.</span>
+      <button onClick={onAdd} className="text-slate-600 underline hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100">
+        Create your first {label}
+      </button>
+    </div>
+  )
+}

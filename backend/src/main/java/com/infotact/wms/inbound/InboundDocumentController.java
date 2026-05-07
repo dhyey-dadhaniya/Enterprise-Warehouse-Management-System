@@ -1,5 +1,6 @@
 package com.infotact.wms.inbound;
 
+import com.infotact.wms.common.dto.MessageResponse;
 import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.inbound.dto.InboundDocumentCreateRequest;
 import com.infotact.wms.inbound.dto.InboundDocumentResponse;
@@ -103,9 +104,9 @@ public class InboundDocumentController {
 
     @DeleteMapping("/{id}/lines/{lineId}")
     @PreAuthorize("hasAnyRole('ADMIN','OPERATOR')")
-    public ResponseEntity<Void> deleteLine(@PathVariable Long id, @PathVariable Long lineId) {
+    public ResponseEntity<MessageResponse> deleteLine(@PathVariable Long id, @PathVariable Long lineId) {
         inboundDocumentService.deleteLine(id, lineId);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new MessageResponse("Inbound document line deleted successfully"));
     }
 
     @PostMapping("/{documentId}/lines/{lineId}/post-receipt")

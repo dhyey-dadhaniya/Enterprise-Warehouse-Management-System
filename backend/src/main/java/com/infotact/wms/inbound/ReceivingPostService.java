@@ -100,6 +100,7 @@ public class ReceivingPostService {
 
         Warehouse warehouse = doc.getWarehouse();
         Bin stagingBin = loadStagingBin(request.stagingBinId(), warehouse.getId());
+        assertBinCapacity(warehouse.getId(), stagingBin, qty);
 
         if (doc.getStatus() == InboundDocumentStatus.OPEN) {
             doc.setStatus(InboundDocumentStatus.RECEIVING);
@@ -148,6 +149,21 @@ public class ReceivingPostService {
                 .orElse(line);
         InboundDocument refreshedDoc = inboundDocumentRepository.findById(documentId).orElse(doc);
         return toResponse(refreshedDoc, refreshedLine, qty, savedLedger.getId(), stagingBin.getId(), false);
+    }
+
+    private void assertBinCapacity(Long warehouseId, Bin bin, BigDecimal qty) {
+        Integer cap = bin.getCapacityUnits();
+        if (cap == null) {
+            return;
+        }
+        BigDecimal used = inventoryBalanceRepository.sumUsedQtyInBin(warehouseId, bin.getId());
+        BigDecimal remaining = BigDecimal.valueOf(cap).subtract(used);
+        if (remaining.compareTo(qty) < 0) {
+            throw new ConflictException(
+                    "Bin capacity exceeded for " + bin.getCode()
+                            + " (capacity=" + cap + ", used=" + used + ", incoming=" + qty + ")"
+            );
+        }
     }
 
     private static void assertCanPost(InboundDocumentStatus status) {
