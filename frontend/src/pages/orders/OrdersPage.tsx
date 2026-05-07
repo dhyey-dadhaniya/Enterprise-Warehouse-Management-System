@@ -1,25 +1,34 @@
 import { useMemo, useState } from 'react'
+import { useForm, type Resolver } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowRight, RefreshCcw, Search } from 'lucide-react'
-import type { Order, OrderStatus } from '../../types/domain'
+import { ArrowRight, Plus, RefreshCcw, Search, X } from 'lucide-react'
+import type { SalesOrder, SalesOrderStatus } from '../../types/domain'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Table, TBody, TD, TH, THead, TR } from '../../components/ui/Table'
+import { getApiErrorMessage } from '../../lib/apiErrorMessage'
 import { cn } from '../../lib/cn'
-import { getNextStatus, listOrders, updateOrderStatus } from '../../services/ordersService'
+import { useAuthStore } from '../../store/authStore'
+import { listItems, listWarehouses } from '../../services/catalogService'
+import { advanceOrder, cancelSalesOrder, createSalesOrder, getNextStatus, listOrders } from '../../services/ordersService'
 
-function statusVariant(status: OrderStatus) {
+const createSchema = z.object({
+  orderNumber: z.string().max(64).optional(),
+  warehouseId: z.coerce.number().int().positive(),
+  itemId: z.coerce.number().int().positive(),
+  quantityOrdered: z.coerce.number().positive(),
+})
+
+type CreateForm = z.infer<typeof createSchema>
+
+function statusVariant(status: SalesOrderStatus) {
   if (status === 'SHIPPED') return 'success'
   if (status === 'PACKED') return 'info'
   if (status === 'PICKING') return 'warning'
-  return 'neutral'
-}
-
-function priorityVariant(p: Order['priority']) {
-  if (p === 'HIGH') return 'danger'
-  if (p === 'MEDIUM') return 'warning'
   return 'neutral'
 }
 
@@ -30,10 +39,13 @@ function formatWhen(iso: string) {
 
 export function OrdersPage() {
   const qc = useQueryClient()
+  const roles = useAuthStore((s) => s.roles)
+  const isAdmin = roles.includes('ADMIN')
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState<OrderStatus | ''>('')
+  const [status, setStatus] = useState<SalesOrderStatus | ''>('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const key = useMemo(() => ['orders', { query, status, page, pageSize }] as const, [query, status, page, pageSize])
 
@@ -43,32 +55,76 @@ export function OrdersPage() {
     staleTime: 5_000,
   })
 
+  const warehousesQ = useQuery({
+    queryKey: ['catalog', 'warehouses'],
+    queryFn: listWarehouses,
+    staleTime: 60_000,
+    enabled: createOpen,
+  })
+
+  const itemsQ = useQuery({
+    queryKey: ['catalog', 'items'],
+    queryFn: listItems,
+    staleTime: 60_000,
+    enabled: createOpen,
+  })
+
+  const createForm = useForm<CreateForm>({
+    resolver: zodResolver(createSchema) as Resolver<CreateForm>,
+    defaultValues: { orderNumber: '', warehouseId: 1, itemId: 1, quantityOrdered: 1 },
+    mode: 'onChange',
+  })
+
+  const createM = useMutation({
+    mutationFn: (vals: CreateForm) =>
+      createSalesOrder({
+        orderNumber: vals.orderNumber,
+        warehouseId: vals.warehouseId,
+        lines: [{ itemId: vals.itemId, quantityOrdered: vals.quantityOrdered }],
+      }),
+    onSuccess: async (created: SalesOrder) => {
+      toast.success(`Created ${created.orderNumber}`)
+      setCreateOpen(false)
+      await qc.invalidateQueries({ queryKey: ['orders'] })
+    },
+    onError: () => toast.error('Failed to create sales order.'),
+  })
+
   const mutation = useMutation({
-    mutationFn: updateOrderStatus,
-    onMutate: async (vars) => {
+    mutationFn: advanceOrder,
+    onMutate: async (_vars: { id: string; currentStatus: SalesOrderStatus }) => {
       await qc.cancelQueries({ queryKey: ['orders'] })
       const prev = qc.getQueriesData({ queryKey: ['orders'] })
 
       for (const [k, v] of prev) {
-        const typed = v as { items: Order[]; total: number } | undefined
+        const typed = v as { items: SalesOrder[]; total: number } | undefined
         if (!typed) continue
         qc.setQueryData(k, {
           ...typed,
-          items: typed.items.map((o) => (o.id === vars.id ? { ...o, status: vars.status } : o)),
+          items: typed.items,
         })
       }
 
       return { prev }
     },
-    onError: () => {
-      toast.error('Failed to update status (mock).')
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err) ?? 'Failed to advance order.')
     },
-    onSuccess: (updated) => {
-      toast.success(`Order ${updated.number} → ${updated.status}`)
+    onSuccess: (updated: SalesOrder) => {
+      toast.success(`Order ${updated.orderNumber} → ${updated.status}`)
     },
     onSettled: async () => {
       await qc.invalidateQueries({ queryKey: ['orders'] })
     },
+  })
+
+  const cancelM = useMutation({
+    mutationFn: cancelSalesOrder,
+    onSuccess: async (updated: SalesOrder) => {
+      toast.success(`Cancelled ${updated.orderNumber}`)
+      await qc.invalidateQueries({ queryKey: ['orders'] })
+    },
+    onError: () => toast.error('Failed to cancel order.'),
   })
 
   const items = data?.items ?? []
@@ -87,6 +143,20 @@ export function OrdersPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            size="sm"
+            onClick={() => {
+              if (!isAdmin) {
+                toast.error('Only ADMIN can create sales orders.')
+                return
+              }
+              setCreateOpen((v) => !v)
+            }}
+            disabled={!isAdmin}
+          >
+            {createOpen ? <X className="size-4" /> : <Plus className="size-4" />}
+            {createOpen ? 'Close' : 'Create order'}
+          </Button>
+          <Button
             variant="secondary"
             size="sm"
             onClick={() => refetch()}
@@ -97,6 +167,86 @@ export function OrdersPage() {
           </Button>
         </div>
       </div>
+
+      {createOpen && (
+        <Card className="p-0">
+          <CardHeader className="p-4">
+            <CardTitle>Create sales order (ADMIN)</CardTitle>
+          </CardHeader>
+          <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+            {warehousesQ.isError || itemsQ.isError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                Failed to load warehouses/items for create.
+              </div>
+            ) : warehousesQ.isPending || itemsQ.isPending ? (
+              <div className="space-y-3">
+                <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
+                <div className="h-10 w-full animate-pulse rounded-xl bg-slate-900/5 dark:bg-white/5" />
+              </div>
+            ) : (
+              <form
+                className="grid gap-3 md:grid-cols-4"
+                onSubmit={createForm.handleSubmit((vals: CreateForm) => createM.mutate(vals))}
+              >
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Order # (optional)</label>
+                  <input
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('orderNumber')}
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Warehouse</label>
+                  <select
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('warehouseId')}
+                  >
+                    {(warehousesQ.data ?? []).map((w) => (
+                      <option key={String(w.id)} value={Number(w.id)}>
+                        {w.code} · {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-3">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Item</label>
+                  <select
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('itemId')}
+                  >
+                    {(itemsQ.data ?? []).map((it) => (
+                      <option key={String(it.id)} value={Number(it.id)}>
+                        {it.sku} · {it.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Qty</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:border-slate-700 dark:focus:ring-amber-400/20"
+                    {...createForm.register('quantityOrdered')}
+                  />
+                </div>
+
+                <div className="md:col-span-4 flex items-center gap-2">
+                  <Button type="submit" disabled={!createForm.formState.isValid || createM.isPending}>
+                    Create
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => createForm.reset()} disabled={createM.isPending}>
+                    Reset
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-0">
         <div className="border-b border-slate-200 p-4 dark:border-slate-800">
@@ -117,7 +267,7 @@ export function OrdersPage() {
             <select
               value={status}
               onChange={(e) => {
-                setStatus(e.target.value as OrderStatus | '')
+                setStatus(e.target.value as SalesOrderStatus | '')
                 setPage(1)
               }}
               className="h-10 rounded-xl border border-slate-200 bg-white/85 px-3 text-sm outline-none focus:ring-2 focus:ring-amber-200 dark:border-slate-800 dark:bg-slate-950/70 dark:focus:ring-amber-400/20"
@@ -127,6 +277,7 @@ export function OrdersPage() {
               <option value="PICKING">PICKING</option>
               <option value="PACKED">PACKED</option>
               <option value="SHIPPED">SHIPPED</option>
+              <option value="CANCELLED">CANCELLED</option>
             </select>
 
             <select
@@ -168,7 +319,6 @@ export function OrdersPage() {
                   <TH>Order</TH>
                   <TH>Created</TH>
                   <TH>Status</TH>
-                  <TH>Priority</TH>
                   <TH>Lines</TH>
                   <TH className="text-right">Action</TH>
                 </tr>
@@ -176,14 +326,15 @@ export function OrdersPage() {
               <TBody>
                 {items.map((o) => {
                   const next = getNextStatus(o.status)
+                  const canCancel = isAdmin && o.status !== 'SHIPPED' && o.status !== 'CANCELLED'
                   return (
                     <TR key={o.id}>
                       <TD className="whitespace-nowrap">
                         <div className="text-mono font-semibold text-slate-900 dark:text-slate-100">
-                          {o.number}
+                          {o.orderNumber}
                         </div>
                         <div className="text-xs text-slate-600 dark:text-slate-400">
-                          {o.lines[0]?.sku} · {o.lines[0]?.bin}
+                          {o.lines[0]?.sku}
                           {o.lines.length > 1 ? ` +${o.lines.length - 1}` : ''}
                         </div>
                       </TD>
@@ -195,32 +346,45 @@ export function OrdersPage() {
                           {o.status}
                         </Badge>
                       </TD>
-                      <TD>
-                        <Badge variant={priorityVariant(o.priority)} className="text-mono">
-                          {o.priority}
-                        </Badge>
-                      </TD>
                       <TD className="text-slate-700 dark:text-slate-200">
-                        <span className="text-mono">{o.lines.reduce((a, l) => a + l.qty, 0)}</span>{' '}
+                        <span className="text-mono">
+                          {o.lines.reduce((a, l) => a + (Number(l.quantityOrdered) || 0), 0)}
+                        </span>{' '}
                         <span className="text-xs text-slate-500 dark:text-slate-400">
                           items
                         </span>
                       </TD>
                       <TD className="text-right">
-                        {next ? (
+                        <div className="inline-flex items-center gap-2">
+                          {next ? (
+                            <Button
+                              size="sm"
+                              onClick={() => mutation.mutate({ id: o.id, currentStatus: o.status })}
+                              disabled={mutation.isPending}
+                            >
+                              {o.status === 'PENDING' ? 'Allocate' : o.status === 'PACKED' ? 'Ship' : 'Advance'}
+                              <ArrowRight className="size-4" />
+                            </Button>
+                          ) : (
+                            <Button variant="secondary" size="sm" disabled>
+                              Completed
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
-                            onClick={() => mutation.mutate({ id: o.id, status: next })}
-                            disabled={mutation.isPending}
+                            variant="danger"
+                            onClick={() => {
+                              if (!canCancel) return
+                              const ok = window.confirm(`Cancel order "${o.orderNumber}"?`)
+                              if (!ok) return
+                              cancelM.mutate(o.id)
+                            }}
+                            disabled={!canCancel || cancelM.isPending}
                           >
-                            Advance
-                            <ArrowRight className="size-4" />
+                            Cancel
                           </Button>
-                        ) : (
-                          <Button variant="secondary" size="sm" disabled>
-                            Completed
-                          </Button>
-                        )}
+                        </div>
                       </TD>
                     </TR>
                   )

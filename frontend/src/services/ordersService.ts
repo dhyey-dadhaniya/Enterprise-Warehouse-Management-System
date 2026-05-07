@@ -1,135 +1,84 @@
-import type { AxiosAdapter, AxiosRequestConfig } from 'axios'
-import type { Order, OrderStatus } from '../types/domain'
+import type { SalesOrder, SalesOrderStatus } from '../types/domain'
 import { api } from './http'
-import { ordersSeed } from '../mocks/ordersMock'
 
-type OrdersListResponse = {
-  items: Order[]
+type PageResponse<T> = {
+  content: T[]
+  totalElements: number
+  totalPages: number
+  page: number
+  size: number
+  first: boolean
+  last: boolean
+}
+
+type SalesOrdersListResponse = {
+  items: SalesOrder[]
   total: number
-}
-
-let ordersDb: Order[] = [...ordersSeed]
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
-function parseQuery(url?: string) {
-  const u = new URL(url ?? '', 'http://local')
-  return u.searchParams
-}
-
-function mockAdapter(): AxiosAdapter {
-  return async (config: AxiosRequestConfig) => {
-    await sleep(300)
-    const method = (config.method ?? 'get').toLowerCase()
-    const url = config.url ?? ''
-
-    // GET /orders?query=&status=&page=&pageSize=
-    if (method === 'get' && url.startsWith('/orders')) {
-      const q = parseQuery(url)
-      const query = (q.get('query') ?? '').trim().toLowerCase()
-      const status = (q.get('status') ?? '').trim() as OrderStatus | ''
-      const page = Math.max(1, Number(q.get('page') ?? 1))
-      const pageSize = Math.min(50, Math.max(5, Number(q.get('pageSize') ?? 10)))
-
-      let filtered = [...ordersDb].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      if (status) filtered = filtered.filter((o) => o.status === status)
-      if (query) {
-        filtered = filtered.filter((o) => {
-          if (o.number.toLowerCase().includes(query)) return true
-          return o.lines.some((l) => l.sku.toLowerCase().includes(query) || l.name.toLowerCase().includes(query))
-        })
-      }
-
-      const total = filtered.length
-      const start = (page - 1) * pageSize
-      const items = filtered.slice(start, start + pageSize)
-
-      const data: OrdersListResponse = { items, total }
-      return {
-        status: 200,
-        statusText: 'OK',
-        config,
-        headers: { 'content-type': 'application/json' },
-        data,
-      }
-    }
-
-    // PATCH /orders/:id/status  { status }
-    const match = url.match(/^\/orders\/([^/]+)\/status$/)
-    if (method === 'patch' && match) {
-      const id = match[1]!
-      const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
-      const next = body?.status as OrderStatus | undefined
-      if (!next) {
-        return {
-          status: 400,
-          statusText: 'Bad Request',
-          config,
-          headers: { 'content-type': 'application/json' },
-          data: { message: 'status is required' },
-        }
-      }
-
-      const idx = ordersDb.findIndex((o) => o.id === id)
-      if (idx === -1) {
-        return {
-          status: 404,
-          statusText: 'Not Found',
-          config,
-          headers: { 'content-type': 'application/json' },
-          data: { message: 'order not found' },
-        }
-      }
-
-      ordersDb[idx] = { ...ordersDb[idx], status: next }
-      return {
-        status: 200,
-        statusText: 'OK',
-        config,
-        headers: { 'content-type': 'application/json' },
-        data: ordersDb[idx],
-      }
-    }
-
-    return {
-      status: 404,
-      statusText: 'Not Found',
-      config,
-      headers: { 'content-type': 'application/json' },
-      data: { message: 'mock route not found', url, method },
-    }
-  }
 }
 
 export async function listOrders(input: {
   query?: string
-  status?: OrderStatus | ''
+  status?: SalesOrderStatus | ''
   page: number
   pageSize: number
-}): Promise<OrdersListResponse> {
-  const params = new URLSearchParams()
-  if (input.query) params.set('query', input.query)
-  if (input.status) params.set('status', input.status)
-  params.set('page', String(input.page))
-  params.set('pageSize', String(input.pageSize))
+}): Promise<SalesOrdersListResponse> {
+  const res = await api.get<PageResponse<SalesOrder>>('/sales-orders', {
+    params: { page: Math.max(0, input.page - 1), size: input.pageSize },
+  })
 
-  const res = await api.get<OrdersListResponse>(`/orders?${params.toString()}`, {
-    adapter: mockAdapter(),
+  // Backend doesn't currently expose free-text search params; filter client-side for now.
+  const q = (input.query ?? '').trim().toLowerCase()
+  const status = (input.status ?? '').trim()
+
+  let items = res.data.content
+  if (status) items = items.filter((o) => o.status === status)
+  if (q) {
+    items = items.filter((o) => {
+      if (o.orderNumber.toLowerCase().includes(q)) return true
+      return o.lines.some((l) => l.sku.toLowerCase().includes(q))
+    })
+  }
+
+  return { items, total: res.data.totalElements }
+}
+
+export async function advanceOrder(input: { id: string; currentStatus: SalesOrderStatus }): Promise<SalesOrder> {
+  if (input.currentStatus === 'PENDING') {
+    const res = await api.post<SalesOrder>(`/sales-orders/${input.id}/allocate`)
+    return res.data
+  }
+  if (input.currentStatus === 'PICKING') {
+    const res = await api.patch<SalesOrder>(`/sales-orders/${input.id}/pack`, undefined, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    })
+    return res.data
+  }
+  if (input.currentStatus === 'PACKED') {
+    const res = await api.patch<SalesOrder>(`/sales-orders/${input.id}/ship`)
+    return res.data
+  }
+  return await api.get<SalesOrder>(`/sales-orders/${input.id}`).then((r) => r.data)
+}
+
+export async function createSalesOrder(input: {
+  orderNumber?: string
+  warehouseId: number
+  lines: Array<{ itemId: number; quantityOrdered: number }>
+}): Promise<SalesOrder> {
+  const res = await api.post<SalesOrder>('/sales-orders', {
+    orderNumber: input.orderNumber?.trim() || undefined,
+    warehouseId: input.warehouseId,
+    lines: input.lines.map((l) => ({ itemId: l.itemId, quantityOrdered: l.quantityOrdered })),
   })
   return res.data
 }
 
-export async function updateOrderStatus(input: {
-  id: string
-  status: OrderStatus
-}): Promise<Order> {
-  const res = await api.patch<Order>(`/orders/${input.id}/status`, { status: input.status }, { adapter: mockAdapter() })
+export async function cancelSalesOrder(id: string): Promise<SalesOrder> {
+  const res = await api.patch<SalesOrder>(`/sales-orders/${id}/cancel`)
   return res.data
 }
 
-export function getNextStatus(current: OrderStatus): OrderStatus | null {
+export function getNextStatus(current: SalesOrderStatus): SalesOrderStatus | null {
   if (current === 'PENDING') return 'PICKING'
   if (current === 'PICKING') return 'PACKED'
   if (current === 'PACKED') return 'SHIPPED'
