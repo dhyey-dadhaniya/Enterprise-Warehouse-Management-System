@@ -1,0 +1,78 @@
+---
+description: How to create or modify screens — thin pages, page hooks, feature components
+globs: ['src/pages/**/*', 'src/components/features/**/*', 'src/hooks/**/use-*-page.ts']
+alwaysApply: true
+---
+
+# Screen Creation & Modification (SHM)
+
+When adding a new screen or refactoring an existing one, follow this structure so screens stay readable and consistent.
+
+## 1. Page file (`src/pages/`)
+
+- **Keep the page file thin** (ideally &lt;150 lines; avoid &gt;250).
+- The page should only:
+  - Call **one page hook** (e.g. `useTimelinePage()`, `useGoldenTemplePage()`, `useTenGurusPage()`).
+  - Render **feature components** and pass props from the hook (data, handlers, form state).
+- **No** large state blocks, no big JSX trees, no API calls or business logic inside the page component. All of that lives in the page hook or feature components.
+
+**Example shape:**
+
+```tsx
+export default function SomePage() {
+  const { items, form, errors, openAdd, handleSave, ... } = useSomePage();
+  return (
+    <div className="...">
+      <SomePageHeader onAddNew={openAdd} />
+      {!isAddMode ? (
+        <SomeTable items={items} onEdit={openEdit} onDelete={handleDelete} />
+      ) : (
+        <SomeForm form={form} errors={errors} onSave={handleSave} onCancel={cancelForm} />
+      )}
+    </div>
+  );
+}
+```
+
+## 2. Page hook (`src/hooks/<feature>/use-<feature>-page.ts`)
+
+- **One page hook per screen** (or per major tab/section if the screen is split).
+- The hook owns:
+  - All **state** for that screen (list data, form, errors, modal open, etc.).
+  - All **handlers** (open add/edit, form change, save, delete, cancel).
+  - Any **side effects** (e.g. sync with URL params, navigate).
+- The hook **returns** only what the page and feature components need (no raw setState).
+- **Naming:** `use<Feature>Page.ts` (e.g. `useTimelinePage.ts`, `useGoldenTemplePage.ts`, `useTenGurusPage.ts`). File in a feature folder under `hooks/` when the hook is screen-specific.
+
+## 3. Feature components (`src/components/features/<feature>/`)
+
+- **One folder per feature/screen** (e.g. `timeline/`, `golden-temple/`, `ten-gurus/`).
+- **Split UI into small components**, e.g.:
+  - **Page header** – title, description, primary action (e.g. “Add New”).
+  - **Table/list** – data table or empty state + view/edit/delete actions.
+  - **Form** – add/edit form (inputs, validation messages, cancel/save). Can be reused in a dialog and inline if needed.
+  - **Dialog** – modal for edit (if used); content can use the same form component.
+- **Naming:** kebab-case files (e.g. `timeline-table.tsx`, `timeline-form.tsx`, `edit-content-dialog.tsx`). Export public components from **`index.ts`** (barrel).
+- **Props:** Pass only what each component needs (data, callbacks). Prefer small, focused prop interfaces (see core-principles – Interface Segregation).
+
+## 4. Types and schemas
+
+- **Shared types** for the feature (e.g. `TimelineItem`, `GuruContentItem`) live in **`src/types/`** (or a feature-specific types file if the project uses that).
+- **Form state types** can live in the page hook file if they are only used there, or in `types/` if shared.
+- **Validation:** Use **Zod** (or existing schema pattern) in **`src/schemas/`** where applicable; keep validation logic out of the page component.
+
+## 5. API integration on a screen
+
+- **Do not** call `apiClient` or put `useAPI` inside the page component.
+- **Option A:** Page hook uses **`useAPI`** directly (e.g. for a simple list + mutations).
+- **Option B:** Use a **feature data hook** (e.g. `useTimeline`, `useSikhApps`) that uses `useAPI`, and the **page hook** uses that feature hook and adds local UI state (form, dialogs, etc.).
+- All **error and success toasts** are handled inside the hook that performs the request (e.g. `useAPI` options or inside the page hook after `execute()`).
+
+## Checklist for new or modified screens
+
+- [ ] Page file is thin: only page hook + feature components.
+- [ ] One page hook holds state and handlers; named `use-<feature>-page.ts` and placed under `hooks/<feature>/` if screen-specific.
+- [ ] Feature components live under `components/features/<feature>/` with kebab-case names and a barrel `index.ts`.
+- [ ] No API calls or request logic in the page component; use `useAPI` or a feature hook in the page hook.
+- [ ] Types in `src/types/` (or next to feature); schemas in `src/schemas/` if needed.
+- [ ] Naming and file layout follow **naming-conventions.mdc** and **folder-structure.mdc**.

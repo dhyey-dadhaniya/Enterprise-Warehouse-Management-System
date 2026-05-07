@@ -1,0 +1,60 @@
+---
+description: Global React + TypeScript conventions for this codebase (naming, structure, principles)
+globs: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.json', '**/*.css', '**/*.scss', '**/*.html', '**/*.md']
+alwaysApply: true
+---
+
+# Global React Project Conventions (SHM)
+
+You are working on the **SHM** React + TypeScript codebase (Vite, Tailwind, Shadcn UI).
+
+**Core principles:**
+
+- 1 folder = 1 responsibility
+- Keep components small: split if >250 lines; hooks/utils ≤150 lines
+- Co-locate related files (styles, tests, types) next to the component when applicable
+- Max 3–4 levels of folder nesting
+- Use consistent naming — never deviate (see naming-conventions.mdc)
+- Separate concerns: UI → components, logic → hooks, data → api/utils/types
+- Make everything searchable: descriptive, unique, predictable names
+
+**Top-level src/ structure (this project):**
+
+```bash
+├── src/
+  ├── App/           # Root app and router (App/index.tsx)
+  ├── api/           # API client, endpoints (constants only), index
+  ├── components/
+  │   ├── ui/        # Shadcn primitives (button, card, etc.)
+  │   ├── layout/    # header, sidebar, footer
+  │   └── features/  # feature-specific components (timeline/, golden-temple/, ten-gurus/)
+  ├── contexts/      # e.g. auth-context
+  ├── constants/     # routes, app-wide constants
+  ├── hooks/         # useAPI, feature hooks, feature/use-*-page.ts
+  ├── pages/         # Thin page components only
+  ├── schemas/       # Zod (and similar) validation schemas
+  ├── styles/        # global CSS
+  ├── types/         # shared TS types
+  └── utils/         # pure helpers, auth-utils (no API URLs)
+```
+
+**Folder names:** always **lowercase-kebab-case** (exception: top-level `App/`).
+
+**Path alias:** Use `@/` for src (e.g. `@/components/ui/button`, `@/api`, `@/hooks/useApi`). Never use deep relative paths like `../../../components`.
+
+## Data fetching
+
+- **No TanStack Query** – Do not use `QueryClient`, `useQuery`, or `useMutation`.
+- **All API calls** go through **`useAPI`** (`src/hooks/useApi.ts`) or a feature hook that uses `useAPI`. Endpoints come from `API_ENDPOINTS` in `src/api/endpoints.ts` (constants only).
+- Feature hooks (e.g. `useSikhApps`, `useTimeline`) live in `src/hooks/` and call `useAPI` with the appropriate endpoint and options.
+
+## State
+
+- **Server/API state:** `useAPI` (and feature hooks built on it)
+- **Local UI state:** React state/hooks (useState, useReducer)
+- **Auth state:** `AuthContext` + `auth-utils` (token, logout)
+- No global client store (no Zustand/Redux) in this project
+
+## Screens (pages)
+
+- **Pages are thin:** A page file only composes a **page hook** (e.g. `useTimelinePage`) and **feature components**; no large inline state or JSX. See **screen-architecture.mdc** for screen creation and modification.

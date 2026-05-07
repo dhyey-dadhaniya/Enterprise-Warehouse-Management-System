@@ -1,0 +1,74 @@
+---
+description: High-level principles reminder
+alwaysApply: true
+---
+
+# Core Engineering Principles
+
+You are working in a **professional, scalable React + TypeScript repository**.
+Every line of code you touch **must** satisfy **ALL** of the following principles:
+
+## DRY (Don’t Repeat Yourself)
+
+- Never duplicate logic, JSX, validation schemas, API calls, or styles.
+- Extract repeated patterns immediately:
+  - JSX → reusable component
+  - Logic → custom hook
+  - Styles → Tailwind utilities or shared classes
+- If you copy‑paste >2 lines, **stop and refactor**.
+
+## CLEAN Code
+
+- **Meaningful names**: `isLoading`, `userProfile`, `formatDateTime` — never `data`, `temp`, `x`
+- **Small functions**: ≤20 lines (except render functions ≤50)
+- **Small files**: ≤250 lines (components), ≤150 lines (hooks/utils)
+- **Pure functions** wherever possible (utils, selectors, formatters)
+- **Early returns** — no deep nesting
+- **No magic strings/numbers** → move to `constants/`
+
+## SOLID Principles (TypeScript‑enforced)
+
+### S – Single Responsibility
+
+- One component = one visual concern
+- One hook = one side‑effect or state logic
+- One util = one pure transformation
+- One file = one responsibility
+
+### O – Open/Closed
+
+- Prefer **composition** over extension
+- Use props, children, render callbacks, compound components
+- Never modify a component for a one‑off use case → create a new one
+
+### L – Liskov Substitution
+
+- If you accept `ButtonProps`, any `Button` variant must work without surprises
+- Never remove required props in subclasses
+
+### I – Interface Segregation
+
+- Split large prop interfaces:
+
+  ```ts
+  // Bad
+  interface UserCardProps { user: User; onEdit(); onDelete(); isLoading; ... }
+
+  // Good
+  interface UserCardBaseProps { user: User }
+  interface UserCardActions { onEdit(): void; onDelete(): void }
+  interface UserCardLoading { isLoading: boolean }
+  ```
+
+- Consumers import only what they need
+
+### D – Dependency Inversion
+
+- Depend on abstractions, not concretions
+
+  ```ts
+  // src/hooks/useApi.ts
+  export const useApi = (client: ApiClient = defaultClient) => { ... }
+
+  // tests inject mock client
+  ```
