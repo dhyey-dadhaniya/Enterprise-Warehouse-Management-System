@@ -1,9 +1,37 @@
-import { Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '../components/layout/Sidebar'
 import { TopNav } from '../components/layout/TopNav'
 import { MobileSidebar } from '../components/layout/MobileSidebar'
+import { normalizeRoles } from '../lib/roleUtils'
+import { me } from '../services/authService'
+import { useAuthStore } from '../store/authStore'
 
 export function AppShellLayout() {
+  const navigate = useNavigate()
+  const { accessToken, hydrated, username, roles, setSession, clearSession } = useAuthStore()
+
+  useEffect(() => {
+    if (!accessToken) {
+      navigate('/login', { replace: true })
+      return
+    }
+
+    // Bootstraps session after refresh: fetch /me if needed.
+    if (hydrated && (!username || roles.length === 0)) {
+      me()
+        .then((info) => {
+          setSession({ accessToken, username: info.username, roles: normalizeRoles(info.roles) })
+        })
+        .catch(() => {
+          clearSession()
+          navigate('/login', { replace: true })
+        })
+    }
+  }, [accessToken, clearSession, hydrated, navigate, roles.length, setSession, username])
+
+  if (!accessToken) return null
+
   return (
     <div className="min-h-full">
       <div className="mx-auto flex min-h-full max-w-[1400px]">

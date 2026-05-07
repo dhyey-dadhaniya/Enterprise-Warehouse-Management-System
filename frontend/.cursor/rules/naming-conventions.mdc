@@ -1,0 +1,31 @@
+---
+description: File and folder naming rules for this project
+globs: ['**/*.*']
+alwaysApply: true
+---
+
+# Naming Conventions (SHM)
+
+### Files
+
+- **components/ui/** (Shadcn): `kebab-case.tsx` (e.g. `button.tsx`, `card.tsx`)
+- **Other components:** `kebab-case.tsx` or `PascalCase.tsx` (e.g. `sidebar.tsx`, `mini-chart.tsx`)
+- **Hooks (mandatory):** `camelCase` starting with `use` (e.g. `useGoldenTemple.ts`, `useApi.ts`)
+- **Utils:** `kebab-case.ts` (e.g. `auth-service.ts`); barrel: `index.ts`
+- **Constants:** `kebab-case.ts` or `data.ts` (e.g. `constants/data.ts`)
+- **Types:** `index.ts` in `types/` or `PascalCase.types.ts` next to component
+- **Styles:** `*.module.css` or `index.css` in `styles/`
+- **Tests:** `*.test.tsx`
+
+### Folders
+
+- **lowercase-kebab-case** (e.g. `components/user-card/`, `hooks/use-local-storage/`)
+- Exception: top-level **App/** (PascalCase) is allowed
+
+```bash
+components/ui/
+components/layout/
+hooks/
+utils/
+pages/
+```

@@ -1,0 +1,40 @@
+---
+description: Import order and path alias for this project
+globs: ['**/*.tsx', '**/*.ts']
+alwaysApply: false
+---
+
+# Import Order (SHM)
+
+Use this project’s **@/** alias for anything under `src/`. Do not use deep relative paths like `../../../components`.
+
+**Order and groups (blank line between groups):**
+
+```tsx
+// React & hooks
+import { useState } from "react";
+import { HashRouter, Routes, Route } from "react-router-dom";
+
+// External libraries
+import { someLib } from "some-lib";
+
+// Internal (@/ = src/)
+import { Button } from "@/components/ui/button";
+import { apiClient, API_ENDPOINTS } from "@/api";
+import { cn } from "@/utils";
+import type { SomeType } from "@/types";
+
+// Relative (same feature/folder)
+import { validate } from "./utils";
+import type { FormData } from "./types";
+
+// Styles (last)
+import "@/styles/index.css";
+import styles from "./MyComponent.module.css";
+```
+
+**Rules:**
+
+- Use **@/** alias for all src imports (Vite/tsconfig map `@` → `src`).
+- No `../../../components` or similar; use `@/components/...`.
+- Blank line between each group.

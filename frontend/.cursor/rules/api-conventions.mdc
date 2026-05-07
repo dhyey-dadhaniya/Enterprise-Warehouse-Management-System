@@ -1,0 +1,37 @@
+---
+description: API layer, endpoints, and data fetching — single client, useAPI hook, no TanStack Query
+globs: ['src/api/**/*', 'src/hooks/useApi.ts', 'src/hooks/use*.ts', 'src/utils/auth-utils.ts']
+alwaysApply: true
+---
+
+# API & Data Fetching (SHM)
+
+## API layer layout
+
+- **`src/api/client.ts`** – Single Axios instance; request interceptor (auth token); response interceptor (normalize errors, 401 → logout).
+- **`src/api/endpoints.ts`** – **Only endpoint path constants.** No request functions, no `fetch`/`axios` calls here.
+  - Export a single object (e.g. `API_ENDPOINTS`) with nested keys: `AUTH.LOGIN`, `AUTH.ME`, `SIKH_APPS`, `TEN_GURUS_CONTENT(guruId)`, etc.
+  - Dynamic paths as functions: `(id: string) => \`/resource/\${id}\``.
+- **`src/api/index.ts`** – Re-export `apiClient` and `API_ENDPOINTS` only.
+
+## Making requests
+
+- **All HTTP requests go through the `useAPI` hook** (`src/hooks/useApi.ts`).
+  - Pass **endpoint** (string or `() => string`) and **options**: `method`, `params`, `immediate`, `key`, `onSuccess`, `onError`, `showToastOnError`, `showToastOnSuccess`, `successMessage`.
+  - Hook returns: `data`, `loading`, `error`, `execute(body?)`, `refetch()`.
+  - Hook handles try/catch, error normalization, and optional toasts; components do not wrap calls in try/catch.
+- **Feature hooks** (e.g. `useSikhApps`, `useTimeline`, `useGurus`) use `useAPI(API_ENDPOINTS.…, { method: 'GET', … })` or POST with `execute(payload)`. All request and error/toast behavior stays in the hook.
+- **No TanStack Query** – Do not use `QueryClient`, `useQuery`, or `useMutation`. Use `useAPI` (and optional feature hooks) only.
+
+## Auth
+
+- **`src/utils/auth-utils.ts`** – Token helpers: get/set/clear access token, `logout()`, `extractTokenFromLoginResponse()`. No API URLs here.
+- **`src/contexts/auth-context.tsx`** – Uses `apiClient.get(API_ENDPOINTS.AUTH.ME)` and auth-utils for login state and logout.
+- Login flow: use `useAPI(API_ENDPOINTS.AUTH.LOGIN, { method: 'POST', immediate: false, onSuccess, showToastOnError: true })`; in `onSuccess` call `extractTokenFromLoginResponse`, set token, then navigate.
+
+## Rules
+
+- **Never** put request logic or URLs in components; use `useAPI` or a feature hook.
+- **Never** add request functions to `endpoints.ts`; only path constants.
+- **Never** use `react-query` / `@tanstack/react-query` for data fetching.
+- Keep feature hooks small and focused; they call `useAPI` and expose `data`, `loading`, `error`, and actions (`execute`, `refetch`).

@@ -1,0 +1,68 @@
+---
+description: Component layout and structure for this project
+globs: ['src/components/**/*']
+alwaysApply: false
+---
+
+# Component Structure (SHM)
+
+This project uses **Shadcn UI** in `components/ui/` (single-file primitives) and feature folders under `components/`.
+
+## components/ui/
+
+- One file per primitive: **kebab-case.tsx** (e.g. `button.tsx`, `card.tsx`, `dialog.tsx`).
+- Import with `@/components/ui/button`, etc.
+- No mandatory one-folder-per-component here; flat files are fine.
+
+## components/layout/
+
+- Layout pieces: `sidebar.tsx`, `header.tsx`, etc. Single file or folder with related files.
+
+## components/features/
+
+- **One folder per feature/screen** (e.g. `timeline/`, `golden-temple/`, `ten-gurus/`).
+- Feature-specific or larger components live here as kebab-case files: `timeline-table.tsx`, `timeline-form.tsx`, `edit-content-dialog.tsx`.
+- Re-export public components from **`index.ts`** (barrel). Co-locate types next to the component when it helps.
+
+**Guidelines:**
+
+- One component per file (or small private sub-components in same file if needed).
+- Use **@/** for imports (e.g. `@/components/ui/button`, `@/utils/auth-service`).
+- New reusable pieces that don’t belong in `ui/` can get their own folder under `components/` with an `index.tsx` or barrel if needed.
+
+## When to create a component folder
+
+- Create a folder instead of a single file when:
+  - The component has **visible subcomponents** (e.g. `Header`, `Footer`, `Item`).
+  - You need **types, tests, stories, or styles** that are specific to this component.
+  - The JSX or logic is getting large and you want to split it into clearer pieces.
+
+Example:
+
+```bash
+components/user-card/
+├── index.tsx              # Re-export main component + types
+├── UserCard.tsx           # Main component
+├── UserCardHeader.tsx     # Sub-component
+├── UserCardFooter.tsx     # Sub-component
+├── UserCard.types.ts      # Types/interfaces
+└── UserCard.test.tsx      # Tests
+```
+
+## Subcomponent naming
+
+- Name subcomponents with the **parent prefix** to keep search and imports clear:
+  - `UserCardHeader.tsx`, `UserCardFooter.tsx`, `UserCardItem.tsx`
+- Re-export public pieces from `index.tsx`:
+
+```ts
+// components/user-card/index.tsx
+export { default as UserCard } from './UserCard';
+export { default as UserCardHeader } from './UserCardHeader';
+export { default as UserCardFooter } from './UserCardFooter';
+export type { UserCardProps } from './UserCard.types';
+```
+
+- Keep **private-only** subcomponents in the same file as the parent when:
+  - They are tiny helpers.
+  - They are not reused outside that file.
