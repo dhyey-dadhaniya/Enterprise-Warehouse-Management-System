@@ -53,6 +53,7 @@ final class MasterDataMapper {
                 b.getAisle() == null ? null : b.getAisle().getId(),
                 b.getCode(),
                 b.getDescription(),
+                b.getCapacityUnits(),
                 b.isActive(),
                 b.getCreatedAt(),
                 b.getUpdatedAt()

@@ -1,5 +1,6 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.MessageResponse;
 import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.master.dto.ZoneRequest;
 import com.infotact.wms.master.dto.ZoneResponse;
@@ -64,8 +65,8 @@ public class ZoneController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<MessageResponse> delete(@PathVariable Long id) {
         zoneService.delete(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new MessageResponse("Zone deleted successfully"));
     }
 }

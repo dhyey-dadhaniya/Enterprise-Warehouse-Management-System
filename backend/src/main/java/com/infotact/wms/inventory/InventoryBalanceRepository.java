@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.Lock;
 import jakarta.persistence.LockModeType;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,4 +42,11 @@ public interface InventoryBalanceRepository extends JpaRepository<InventoryBalan
             ORDER BY z.code ASC, b.code ASC
             """)
     List<InventoryBalance> findForAllocationOrderByLocation(@Param("warehouseId") Long warehouseId, @Param("itemId") Long itemId);
+
+    @Query("""
+            select coalesce(sum(ib.onHandQty + ib.reservedQty), 0)
+            from InventoryBalance ib
+            where ib.warehouse.id = :warehouseId and ib.bin.id = :binId
+            """)
+    BigDecimal sumUsedQtyInBin(@Param("warehouseId") Long warehouseId, @Param("binId") Long binId);
 }

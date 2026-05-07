@@ -154,7 +154,7 @@ class ReceivingPostApiTest {
                         .content("""
                                 {
                                   "documentNumber": "DR-%s",
-                                  "documentType": "PO",
+                                  "documentType": "PURCHASE_ORDER",
                                   "warehouseId": %d,
                                   "lines": [ { "itemId": %d, "expectedQty": 1 } ]
                                 }

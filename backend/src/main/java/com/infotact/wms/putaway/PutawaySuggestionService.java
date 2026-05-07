@@ -35,7 +35,13 @@ public class PutawaySuggestionService {
      * </ol>
      */
     @Transactional(readOnly = true)
-    public Optional<PutawaySuggestion> suggest(Long warehouseId, Long itemId, Long excludeBinId) {
+    public Optional<PutawaySuggestion> suggest(
+            Long warehouseId,
+            Long itemId,
+            Long excludeBinId,
+            BigDecimal quantity
+    ) {
+        BigDecimal qty = quantity == null ? BigDecimal.ZERO : quantity;
         List<InventoryBalance> balances = inventoryBalanceRepository.findForPutawaySuggestion(warehouseId, itemId);
         Comparator<InventoryBalance> consolidateOrder = Comparator
                 .comparing(InventoryBalance::getOnHandQty, Comparator.reverseOrder())
@@ -45,6 +51,7 @@ public class PutawaySuggestionService {
         Optional<Bin> consolidate = balances.stream()
                 .filter(ib -> !ib.getBin().getId().equals(excludeBinId))
                 .filter(ib -> ib.getBin().isActive())
+                .filter(ib -> canFit(warehouseId, ib.getBin(), qty))
                 .filter(ib -> ib.getOnHandQty().compareTo(BigDecimal.ZERO) > 0)
                 .sorted(consolidateOrder)
                 .map(InventoryBalance::getBin)
@@ -59,6 +66,9 @@ public class PutawaySuggestionService {
             if (bin.getId().equals(excludeBinId)) {
                 continue;
             }
+            if (!canFit(warehouseId, bin, qty)) {
+                continue;
+            }
             Optional<InventoryBalance> bal = inventoryBalanceRepository
                     .findByWarehouse_IdAndBin_IdAndItem_Id(warehouseId, bin.getId(), itemId);
             boolean emptyForSku = bal.isEmpty() || bal.get().getOnHandQty().compareTo(BigDecimal.ZERO) == 0;
@@ -69,8 +79,22 @@ public class PutawaySuggestionService {
 
         return orderedBins.stream()
                 .filter(b -> !b.getId().equals(excludeBinId))
+                .filter(b -> canFit(warehouseId, b, qty))
                 .findFirst()
                 .map(b -> new PutawaySuggestion(b.getId(), PutawayRule.FALLBACK));
+    }
+
+    private boolean canFit(Long warehouseId, Bin bin, BigDecimal qty) {
+        Integer cap = bin.getCapacityUnits();
+        if (cap == null) {
+            return true;
+        }
+        if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        BigDecimal used = inventoryBalanceRepository.sumUsedQtyInBin(warehouseId, bin.getId());
+        BigDecimal remaining = BigDecimal.valueOf(cap).subtract(used);
+        return remaining.compareTo(qty) >= 0;
     }
 
     public record PutawaySuggestion(long suggestedBinId, PutawayRule rule) {

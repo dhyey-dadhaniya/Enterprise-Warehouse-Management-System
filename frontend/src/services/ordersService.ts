@@ -1,132 +1,154 @@
-import type { AxiosAdapter, AxiosRequestConfig } from 'axios'
 import type { Order, OrderStatus } from '../types/domain'
 import { api } from './http'
-import { ordersSeed } from '../mocks/ordersMock'
+import type { ID } from '../types/domain'
 
-type OrdersListResponse = {
-  items: Order[]
-  total: number
+export interface SalesOrderDetailLine {
+  id: number
+  lineNumber: number
+  itemId: number
+  sku: string
+  quantityOrdered: number
+  quantityAllocated: number
+  quantityPicked: number
 }
 
-let ordersDb: Order[] = [...ordersSeed]
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
-function parseQuery(url?: string) {
-  const u = new URL(url ?? '', 'http://local')
-  return u.searchParams
-}
-
-function mockAdapter(): AxiosAdapter {
-  return async (config: AxiosRequestConfig) => {
-    await sleep(300)
-    const method = (config.method ?? 'get').toLowerCase()
-    const url = config.url ?? ''
-
-    // GET /orders?query=&status=&page=&pageSize=
-    if (method === 'get' && url.startsWith('/orders')) {
-      const q = parseQuery(url)
-      const query = (q.get('query') ?? '').trim().toLowerCase()
-      const status = (q.get('status') ?? '').trim() as OrderStatus | ''
-      const page = Math.max(1, Number(q.get('page') ?? 1))
-      const pageSize = Math.min(50, Math.max(5, Number(q.get('pageSize') ?? 10)))
-
-      let filtered = [...ordersDb].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      if (status) filtered = filtered.filter((o) => o.status === status)
-      if (query) {
-        filtered = filtered.filter((o) => {
-          if (o.number.toLowerCase().includes(query)) return true
-          return o.lines.some((l) => l.sku.toLowerCase().includes(query) || l.name.toLowerCase().includes(query))
-        })
-      }
-
-      const total = filtered.length
-      const start = (page - 1) * pageSize
-      const items = filtered.slice(start, start + pageSize)
-
-      const data: OrdersListResponse = { items, total }
-      return {
-        status: 200,
-        statusText: 'OK',
-        config,
-        headers: { 'content-type': 'application/json' },
-        data,
-      }
-    }
-
-    // PATCH /orders/:id/status  { status }
-    const match = url.match(/^\/orders\/([^/]+)\/status$/)
-    if (method === 'patch' && match) {
-      const id = match[1]!
-      const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
-      const next = body?.status as OrderStatus | undefined
-      if (!next) {
-        return {
-          status: 400,
-          statusText: 'Bad Request',
-          config,
-          headers: { 'content-type': 'application/json' },
-          data: { message: 'status is required' },
-        }
-      }
-
-      const idx = ordersDb.findIndex((o) => o.id === id)
-      if (idx === -1) {
-        return {
-          status: 404,
-          statusText: 'Not Found',
-          config,
-          headers: { 'content-type': 'application/json' },
-          data: { message: 'order not found' },
-        }
-      }
-
-      ordersDb[idx] = { ...ordersDb[idx], status: next }
-      return {
-        status: 200,
-        statusText: 'OK',
-        config,
-        headers: { 'content-type': 'application/json' },
-        data: ordersDb[idx],
-      }
-    }
-
-    return {
-      status: 404,
-      statusText: 'Not Found',
-      config,
-      headers: { 'content-type': 'application/json' },
-      data: { message: 'mock route not found', url, method },
-    }
-  }
+export interface SalesOrderDetail {
+  id: number
+  orderNumber: string
+  warehouseId: number
+  warehouseCode: string
+  status: OrderStatus
+  lines: SalesOrderDetailLine[]
+  createdAt: string
+  updatedAt: string
 }
 
 export async function listOrders(input: {
-  query?: string
-  status?: OrderStatus | ''
   page: number
   pageSize: number
-}): Promise<OrdersListResponse> {
+  warehouseId?: number
+}): Promise<{ items: Order[]; total: number }> {
   const params = new URLSearchParams()
-  if (input.query) params.set('query', input.query)
-  if (input.status) params.set('status', input.status)
-  params.set('page', String(input.page))
-  params.set('pageSize', String(input.pageSize))
+  if (input.warehouseId != null) params.set('warehouseId', String(input.warehouseId))
+  params.set('page', String(Math.max(0, input.page - 1)))
+  params.set('size', String(input.pageSize))
 
-  const res = await api.get<OrdersListResponse>(`/orders?${params.toString()}`, {
-    adapter: mockAdapter(),
-  })
-  return res.data
+  const res = await api.get<{
+    content: Array<{
+      id: number
+      warehouseId: number
+      warehouseCode: string
+      orderNumber: string
+      status: OrderStatus
+      createdAt: string
+      updatedAt: string
+      lines: Array<{
+        id: number
+        lineNumber: number
+        itemId: number
+        sku: string
+        quantityOrdered: string
+        quantityAllocated: string
+        quantityPicked: string
+      }>
+    }>
+    totalElements: number
+  }>(`/sales-orders?${params.toString()}`)
+
+  return {
+    items: res.data.content.map((o) => ({
+      id: String(o.id) as ID,
+      number: o.orderNumber,
+      status: o.status,
+      priority: 'MEDIUM',
+      warehouseId: o.warehouseId,
+      createdAt: o.createdAt,
+      lines: o.lines.map((l) => ({
+        id: String(l.id) as ID,
+        sku: l.sku,
+        name: l.sku,
+        qty: Number(l.quantityOrdered),
+        warehouseName: o.warehouseCode,
+        aisle: '',
+        bin: '',
+      })),
+    })),
+    total: res.data.totalElements,
+  }
 }
 
-export async function updateOrderStatus(input: {
-  id: string
-  status: OrderStatus
-}): Promise<Order> {
-  const res = await api.patch<Order>(`/orders/${input.id}/status`, { status: input.status }, { adapter: mockAdapter() })
-  return res.data
+export async function getSalesOrder(id: number): Promise<SalesOrderDetail> {
+  const res = await api.get<{
+    id: number
+    orderNumber: string
+    warehouseId: number
+    warehouseCode: string
+    status: OrderStatus
+    createdAt: string
+    updatedAt: string
+    lines: Array<{
+      id: number
+      lineNumber: number
+      itemId: number
+      sku: string
+      quantityOrdered: string
+      quantityAllocated: string
+      quantityPicked: string
+    }>
+  }>(`/sales-orders/${id}`)
+  const o = res.data
+  return {
+    id: o.id,
+    orderNumber: o.orderNumber,
+    warehouseId: o.warehouseId,
+    warehouseCode: o.warehouseCode,
+    status: o.status,
+    createdAt: o.createdAt,
+    updatedAt: o.updatedAt,
+    lines: o.lines.map((l) => ({
+      id: l.id,
+      lineNumber: l.lineNumber,
+      itemId: l.itemId,
+      sku: l.sku,
+      quantityOrdered: Number(l.quantityOrdered),
+      quantityAllocated: Number(l.quantityAllocated),
+      quantityPicked: Number(l.quantityPicked),
+    })),
+  }
+}
+
+export async function cancelOrder(id: number): Promise<void> {
+  await api.patch(`/sales-orders/${id}/cancel`, null)
+}
+
+export async function createOrder(data: {
+  orderNumber?: string
+  warehouseId: number
+  lines: Array<{ itemId: number; quantityOrdered: number }>
+}): Promise<void> {
+  await api.post('/sales-orders', data)
+}
+
+export async function advanceOrder(input: { id: string; current: OrderStatus; warehouseId?: number }): Promise<void> {
+  const orderId = Number(input.id)
+
+  if (input.current === 'PENDING') {
+    try {
+      await api.post(`/sales-orders/${orderId}/allocate`, null)
+    } catch {
+      // Ignore if already allocated (409) — proceed to wave creation
+    }
+    await api.post('/pick-waves', { warehouseId: input.warehouseId, salesOrderIds: [orderId] })
+    return
+  }
+  if (input.current === 'PICKING') {
+    await api.patch(`/sales-orders/${orderId}/pack`, null)
+    return
+  }
+  if (input.current === 'PACKED') {
+    await api.patch(`/sales-orders/${orderId}/ship`, null)
+    return
+  }
 }
 
 export function getNextStatus(current: OrderStatus): OrderStatus | null {
@@ -136,3 +158,76 @@ export function getNextStatus(current: OrderStatus): OrderStatus | null {
   return null
 }
 
+export interface PickTask {
+  id: number
+  pickWaveId: number
+  salesOrderId: number
+  warehouseId: number
+  binId: number
+  binCode: string
+  zoneCode: string
+  itemId: number
+  sku: string
+  quantityToPick: string
+  quantityPicked: string
+  status: 'PENDING' | 'COMPLETED'
+  routeSequence: number
+}
+
+export async function listPickTasks(params: {
+  status?: 'PENDING' | 'COMPLETED'
+  warehouseId?: number
+  page?: number
+  size?: number
+}): Promise<{ content: PickTask[]; totalElements: number }> {
+  const p = new URLSearchParams()
+  if (params.status) p.set('status', params.status)
+  if (params.warehouseId != null) p.set('warehouseId', String(params.warehouseId))
+  p.set('page', String(params.page ?? 0))
+  p.set('size', String(params.size ?? 50))
+  const res = await api.get<{ content: PickTask[]; totalElements: number }>(
+    `/pick-tasks?${p.toString()}`,
+  )
+  return res.data
+}
+
+export async function listPickTasksByWave(waveId: number): Promise<PickTask[]> {
+  const res = await api.get<PickTask[]>(`/pick-tasks?waveId=${waveId}`)
+  return res.data
+}
+
+export async function getPickTask(id: number): Promise<PickTask> {
+  const res = await api.get<PickTask>(`/pick-tasks/${id}`)
+  return res.data
+}
+
+export interface PickWave {
+  id: number
+  waveCode: string
+  warehouseId: number
+  status: string
+  salesOrderIds: number[]
+  taskCount: number
+  createdAt: string
+}
+
+export async function getPickWave(id: number): Promise<PickWave> {
+  const res = await api.get<PickWave>(`/pick-waves/${id}`)
+  return res.data
+}
+
+export async function createPickWave(data: {
+  warehouseId: number
+  salesOrderIds: number[]
+}): Promise<PickWave> {
+  const res = await api.post<PickWave>('/pick-waves', data)
+  return res.data
+}
+
+export async function confirmPickTask(id: number): Promise<void> {
+  await api.post(
+    `/pick-tasks/${id}/confirm-pick`,
+    null,
+    { headers: { 'Idempotency-Key': `pick-${id}-${Date.now()}` } },
+  )
+}

@@ -4,6 +4,7 @@ import {
   Boxes,
   Cable,
   ClipboardList,
+  FileInput,
   LayoutDashboard,
   PackageSearch,
   PanelLeftClose,
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN'] },
   { to: '/warehouse-structure', label: 'Warehouse', icon: Spline, roles: ['ADMIN'] },
   { to: '/receiving-putaway', label: 'Receiving', icon: Truck, roles: ['ADMIN'] },
+  { to: '/inbound', label: 'Inbound Docs', icon: FileInput, roles: ['ADMIN', 'OPERATOR'] },
   { to: '/orders', label: 'Orders', icon: ClipboardList, roles: ['ADMIN'] },
   { to: '/picking', label: 'Picking', icon: PackageSearch, roles: ['OPERATOR'] },
   { to: '/barcode', label: 'Barcode/QR', icon: Barcode, roles: ['ADMIN', 'OPERATOR'] },
@@ -55,7 +57,10 @@ export function SidebarContent({
   onNavigate?: () => void
   forceExpanded?: boolean
 }) {
+  // Select primitives separately to keep snapshots stable under useSyncExternalStore.
+  // Returning a new object from the selector can cause "getSnapshot should be cached" loops in React.
   const role = useAuthStore((s) => s.role)
+  const token = useAuthStore((s) => s.token)
   const collapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const isCollapsed = forceExpanded ? false : collapsed
@@ -97,7 +102,7 @@ export function SidebarContent({
 
       <nav className="flex-1 space-y-1 px-2">
         {navItems
-          .filter((i) => i.roles.includes(role))
+          .filter((i) => !!role && i.roles.includes(role as UserRole))
           .map((item) => {
             const Icon = item.icon
             return (
@@ -134,10 +139,7 @@ export function SidebarContent({
             <>
               <div className="font-semibold text-slate-900 dark:text-slate-100">Role</div>
               <div className="mt-1 flex items-center justify-between gap-3">
-                <span className="text-mono">{role}</span>
-                <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                  LIVE MOCK
-                </span>
+                <span className="text-mono">{token ? role ?? '—' : 'Signed out'}</span>
               </div>
             </>
           ) : (

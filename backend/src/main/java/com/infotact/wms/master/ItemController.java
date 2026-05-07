@@ -1,5 +1,6 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.MessageResponse;
 import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.master.dto.ItemRequest;
 import com.infotact.wms.master.dto.ItemResponse;
@@ -61,8 +62,8 @@ public class ItemController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<MessageResponse> delete(@PathVariable Long id) {
         itemService.delete(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new MessageResponse("Item deleted successfully"));
     }
 }

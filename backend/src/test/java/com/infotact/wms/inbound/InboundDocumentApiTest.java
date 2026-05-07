@@ -128,7 +128,7 @@ class InboundDocumentApiTest {
                         .content("""
                                 {
                                   "documentNumber": "%s",
-                                  "documentType": "PO",
+                                  "documentType": "PURCHASE_ORDER",
                                   "warehouseId": %d
                                 }
                                 """.formatted(docNo, whId)))

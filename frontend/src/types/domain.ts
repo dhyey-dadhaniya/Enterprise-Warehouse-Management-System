@@ -23,7 +23,109 @@ export interface WarehouseNode {
   children?: WarehouseNode[]
 }
 
-export type OrderStatus = 'PENDING' | 'PICKING' | 'PACKED' | 'SHIPPED'
+export interface PageResponse<T> {
+  content: T[]
+  totalElements: number
+  totalPages: number
+  size: number
+  number: number
+}
+
+export interface WarehouseDetail {
+  id: number
+  code: string
+  name: string
+  addressLine?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Zone {
+  id: number
+  warehouseId: number
+  code: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Aisle {
+  id: number
+  zoneId: number
+  warehouseId: number
+  code: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Bin {
+  id: number
+  zoneId: number
+  warehouseId: number
+  aisleId?: number
+  code: string
+  description?: string
+  capacityUnits?: number
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type InboundDocumentStatus =
+  | 'DRAFT'
+  | 'OPEN'
+  | 'RECEIVING'
+  | 'PARTIALLY_RECEIVED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+
+export type InboundDocumentType = 'ASN' | 'PURCHASE_ORDER'
+
+export interface InboundLine {
+  id: number
+  lineNumber: number
+  itemId: number
+  sku: string
+  itemName: string
+  expectedQty: number
+  receivedQty: number
+  postedQty: number
+  notes?: string
+}
+
+export interface InboundDocument {
+  id: number
+  documentNumber: string
+  documentType: InboundDocumentType
+  warehouseId: number
+  warehouseCode: string
+  status: InboundDocumentStatus
+  supplierName?: string
+  reference?: string
+  expectedDeliveryDate?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  lineCount: number
+  lines: InboundLine[]
+}
+
+export interface ReceivingPostResult {
+  inboundDocumentId: number
+  lineId: number
+  quantityPostedThisRequest: number
+  postedQty: number
+  receivedQty: number
+  expectedQty: number
+  receivedVersusExpectedMismatch: boolean
+  stagingBinId: number
+  inventoryLedgerEntryId: number
+  documentStatus: InboundDocumentStatus
+  replayed: boolean
+}
+
+export type OrderStatus = 'PENDING' | 'PICKING' | 'PACKED' | 'SHIPPED' | 'CANCELLED'
 
 export interface OrderLine {
   id: ID
@@ -40,6 +142,7 @@ export interface Order {
   number: string
   status: OrderStatus
   priority: 'LOW' | 'MEDIUM' | 'HIGH'
+  warehouseId: number
   createdAt: string
   lines: OrderLine[]
 }

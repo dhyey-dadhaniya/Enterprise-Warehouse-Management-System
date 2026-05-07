@@ -1,5 +1,6 @@
 package com.infotact.wms.master;
 
+import com.infotact.wms.common.dto.MessageResponse;
 import com.infotact.wms.common.dto.PageResponse;
 import com.infotact.wms.master.dto.WarehouseRequest;
 import com.infotact.wms.master.dto.WarehouseResponse;
@@ -60,8 +61,8 @@ public class WarehouseController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<MessageResponse> delete(@PathVariable Long id) {
         warehouseService.delete(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new MessageResponse("Warehouse deleted successfully"));
     }
 }

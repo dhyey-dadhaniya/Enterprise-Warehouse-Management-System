@@ -9,6 +9,7 @@ public record BinResponse(
         Long aisleId,
         String code,
         String description,
+        Integer capacityUnits,
         boolean active,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
